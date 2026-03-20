@@ -1,0 +1,20 @@
+[
+  {
+    "id": "home",
+    "title": "StudyNotion",
+    "url": "/",
+    "text": "StudyNotion is an online education platform offering full stack developer courses, hands-on projects, and mentorship. Learn MERN, deployment, and more."
+  },
+  {
+    "id": "web-course",
+    "title": "Web Development Course",
+    "url": "/courses/web-development",
+    "text": "This course covers HTML, CSS, JavaScript, React, Node.js, Express, MongoDB, and deployment using Vercel and Docker."
+  },
+  {
+    "id": "faq-cancel",
+    "title": "Cancellation Policy",
+    "url": "/faq#cancellation",
+    "text": "You can cancel your course within 7 days for a full refund. After that refund depends on the course policy."
+  }
+]

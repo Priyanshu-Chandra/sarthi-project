@@ -1,0 +1,72 @@
+[
+  {
+    "title": "Web Courses",
+    "content": "We offer a variety of web development courses including HTML, CSS, JavaScript, React, Node.js, and full-stack development."
+  },
+  {
+    "title": "Instructor Section",
+    "content": "Our instructors are industry experts with years of experience. They provide hands-on guidance and feedback."
+  },
+  {
+    "title": "Pricing Plans",
+    "content": "We offer different pricing plans for students: Free, Standard, and Premium. Each plan gives access to different levels of content and support."
+  },
+  {
+    "title": "How to Enroll",
+    "content": "To enroll in a course, sign up for an account, choose your desired course, and click 'Enroll Now'. Payment options include credit card and UPI."
+  },
+  {
+    "title": "Support",
+    "content": "For support, contact us at support@studynotion.com or use the live chat available on the website."
+  },
+  {
+    "title": "available courses",
+    "content": "We offer the following courses: DSA, Web Development, App Development, DevOps, and Data Analytics."
+  },
+  {
+    "title": "top instructors",
+    "content": "Our top instructors are: Striver, Aditya Verma, and Harkirat."
+  },
+  {
+    "title": "best selling courses",
+    "content": "Best selling course: DSA by Striver, Price: 2500 INR, Validity: 1 year, Level: Zero to Hero."
+  },
+  {
+    "title": "DSA",
+    "content": "Available DSA courses: DSA for Beginners, DSA Advanced, Competitive Programming, DSA Interview Prep."
+  },
+  {
+    "title": "Web Development",
+    "content": "Available Web Development courses: HTML & CSS Bootcamp, JavaScript Essentials, React & Redux, Full Stack Web Development."
+  },
+  {
+    "title": "App Development",
+    "content": "Available App Development courses: Android App Development, iOS App Development, Flutter Cross-Platform Development."
+  },
+  {
+    "title": "DevOps",
+    "content": "Available DevOps courses: DevOps Fundamentals, Docker & Kubernetes, CI/CD Pipeline, Cloud Infrastructure."
+  },
+  {
+    "title": "Data Analytics",
+    "content": "Available Data Analytics courses: Excel & SQL for Data Analysis, Python for Data Analytics, Power BI, Machine Learning Basics."
+  },
+  {
+    "title": "support",
+    "content": "For support, contact us at support@studynotion.com or use the live chat available on the website."
+  },
+  {
+    "title": "contact",
+    "content": "You can contact us via email at support@studynotion.com or visit the Contact page on the website."
+  },
+  {
+    "title": "payment options available",
+    "content": "We accept payments via Credit Card, Debit Card, UPI, and Netbanking."
+  },
+  {
+    "title": "unavailable courses",
+    "content": "Sorry, this course is not available currently."
+  }
+
+  
+]
