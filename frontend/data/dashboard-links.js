@@ -43,6 +43,13 @@ export const sidebarLinks = [
     icon: "VscHistory",
   },
   {
+    id: 10,
+    name: "Study Planner",
+    path: "/dashboard/study-planner",
+    type: ACCOUNT_TYPE.STUDENT,
+    icon: "VscBook",
+  },
+  {
     id: 7,
     name: "Create Category",
     path: "/dashboard/create-category",

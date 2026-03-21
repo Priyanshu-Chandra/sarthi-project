@@ -372,3 +372,58 @@ exports.getAllInstructors = async (req, res) => {
         })
     }
 }
+
+
+
+
+// ================ Purchase History ================
+exports.getPurchaseHistory = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Fetch all CourseProgress records for this student, with enrollment date and payment metadata
+        const progressRecords = await CourseProgress.find({ userId })
+            .populate({
+                path: 'courseID',
+                select: 'courseName courseDescription price thumbnail instructor category',
+                populate: [
+                    { path: 'instructor', select: 'firstName lastName email' },
+                    { path: 'category', select: 'name' },
+                ],
+            })
+            .sort({ createdAt: -1 })
+            .lean();
+
+        // Shape the response
+        const history = progressRecords
+            .filter((rec) => rec.courseID) // guard against deleted courses
+            .map((rec) => ({
+                enrolledAt: rec.createdAt,
+                orderId: rec.orderId || null,
+                paymentId: rec.paymentId || null,
+                amountPaid: rec.amountPaid ?? rec.courseID?.price ?? null,
+                course: {
+                    _id: rec.courseID._id,
+                    courseName: rec.courseID.courseName,
+                    courseDescription: rec.courseID.courseDescription,
+                    price: rec.courseID.price,
+                    thumbnail: rec.courseID.thumbnail,
+                    instructor: rec.courseID.instructor,
+                    category: rec.courseID.category,
+                },
+                videosCompleted: rec.completedVideos?.length ?? 0,
+            }));
+
+        return res.status(200).json({
+            success: true,
+            data: history,
+            message: 'Purchase history fetched successfully',
+        });
+    } catch (error) {
+        console.error('Error fetching purchase history:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message,
+        });
+    }
+}

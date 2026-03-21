@@ -31,6 +31,8 @@ import Instructor from './components/core/Dashboard/Instructor';
 import Cart from "./components/core/Dashboard/Cart/Cart";
 import EnrolledCourses from "./components/core/Dashboard/EnrolledCourses";
 import AddCourse from "./components/core/Dashboard/AddCourse/AddCourse";
+import PurchaseHistory from "./components/core/Dashboard/PurchaseHistory";
+import StudyPlanner from "./components/core/Dashboard/StudyPlanner";
 
 import ViewCourse from "./pages/ViewCourse";
 import VideoDetails from './components/core/ViewCourse/VideoDetails';
@@ -43,6 +45,7 @@ import AllStudents from './components/core/Dashboard/AllStudents';
 import AllInstructors from './components/core/Dashboard/AllInstructors';
 
 import Quiz from "./pages/Quiz";
+import Sitechat from "./components/common/Sitechat";
 function App() {
 
   const { user } = useSelector((state) => state.profile)
@@ -163,11 +166,13 @@ function App() {
 
 
           {/* Route only for Students */}
-          {/* cart , EnrolledCourses */}
+          {/* cart , EnrolledCourses, PurchaseHistory, StudyPlanner */}
           {user?.accountType === ACCOUNT_TYPE.STUDENT && (
             <>
               <Route path="dashboard/cart" element={<Cart />} />
               <Route path="dashboard/enrolled-courses" element={<EnrolledCourses />} />
+              <Route path="dashboard/purchase-history" element={<PurchaseHistory />} />
+              <Route path="dashboard/study-planner" element={<StudyPlanner />} />
             </>
           )}
 
@@ -207,6 +212,9 @@ function App() {
         <Route path="*" element={<PageNotFound />} />
 
       </Routes>
+
+      {/* Global floating chat widget */}
+      <Sitechat />
 
     </div>
   );

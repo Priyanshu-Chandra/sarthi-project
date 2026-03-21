@@ -89,6 +89,7 @@ exports.verifyPayment = async (req, res) => {
   const razorpay_payment_id = req.body?.razorpay_payment_id;
   const razorpay_signature = req.body?.razorpay_signature;
   const courses = req.body?.coursesId;
+  const amount = req.body?.amount; // total amount in paise from Razorpay
   const userId = req.user.id;
 
   if (
@@ -110,21 +111,26 @@ exports.verifyPayment = async (req, res) => {
     .digest("hex");
 
   if (expectedSignature === razorpay_signature) {
-    //enroll student
-    await enrollStudents(courses, userId);
-    //return res
+    // enroll student with payment metadata
+    await enrollStudents(courses, userId, razorpay_order_id, razorpay_payment_id, amount);
     return res.status(200).json({ success: true, message: "Payment Verified" });
   }
   return res.status(200).json({ success: false, message: "Payment Failed" });
 };
 
-const enrollStudents = async (courses, userId) => {
+const enrollStudents = async (courses, userId, orderId = null, paymentId = null, totalAmountPaise = null) => {
   if (!courses || !userId) {
     throw new Error("Please Provide data for Courses or UserId");
   }
 
+  // Calculate per-course amount (distribute total evenly if multiple courses)
+  const perCourseAmount =
+    totalAmountPaise && courses.length > 0
+      ? Math.round(totalAmountPaise / courses.length) / 100  // convert paise → ₹
+      : null;
+
   for (const courseId of courses) {
-    // find the course and enroll the student in it
+    // find course and enroll student
     const enrolledCourse = await Course.findOneAndUpdate(
       { _id: courseId },
       { $push: { studentsEnrolled: userId } },
@@ -135,11 +141,14 @@ const enrollStudents = async (courses, userId) => {
       throw new Error("Course not Found");
     }
 
-    // Initialize course progress
+    // Initialize course progress with payment metadata
     const courseProgress = await CourseProgress.create({
       courseID: courseId,
       userId: userId,
       completedVideos: [],
+      orderId: orderId,
+      paymentId: paymentId,
+      amountPaid: perCourseAmount ?? enrolledCourse.price,
     });
 
     // add course and progress to user
