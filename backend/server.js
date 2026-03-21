@@ -16,6 +16,7 @@ const userRoutes = require('./routes/user');
 const profileRoutes = require('./routes/profile');
 const paymentRoutes = require('./routes/payments');
 const courseRoutes = require('./routes/course');
+const studyPlanner = require("./routes/studyPlanner");
 
 
 // middleware 
@@ -40,6 +41,7 @@ const PORT = process.env.PORT || 5000;
 
 const chatRoute = require("./routes/chatRoute");
 app.use("/api/chat", chatRoute);
+app.use("/api", studyPlanner);
 
 const quizRoutes = require('./routes/quizRoute.js');
 //import quizRoutes from "./routes/quizRoute.js";

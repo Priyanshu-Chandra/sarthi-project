@@ -13,7 +13,6 @@ import ExploreMore from '../components/core/HomePage/ExploreMore'
 import ReviewSlider from '../components/common/ReviewSlider'
 import Course_Slider from '../components/core/Catalog/Course_Slider'
 import ResumeButton from "../components/common/ResumeButton";
-import Sitechat from "../components/common/Sitechat";
 
 import { getCatalogPageData } from '../services/operations/pageAndComponentData'
 
@@ -160,11 +159,6 @@ const Home = () => {
         </div>
 
 
-      {/* ... CHATBOT */}
-      <>
-      <Sitechat />
-    </>
-  
 
 
 

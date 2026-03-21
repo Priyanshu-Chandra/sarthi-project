@@ -10,7 +10,8 @@ const {
     getUserDetails,
     getEnrolledCourses,
     deleteAccount,
-    instructorDashboard
+    instructorDashboard,
+    getPurchaseHistory
 } = require('../controllers/profile');
 
 
@@ -32,6 +33,10 @@ router.put('/updateUserProfileImage', auth, updateUserProfileImage);
 
 // instructor Dashboard Details
 router.get('/instructorDashboard', auth, isInstructor, instructorDashboard);
+
+// Purchase History (students only)
+router.get('/getPurchaseHistory', auth, getPurchaseHistory);
+
 
 
 
