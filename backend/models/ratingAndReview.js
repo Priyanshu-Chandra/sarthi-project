@@ -7,8 +7,10 @@ const ratingAndReviewSchema = new mongoose.Schema({
         required: true,
     },
     rating: {
-        type: String,
-        reqired: true
+        type: Number,
+        required: true,
+        min: 1,
+        max: 5
     },
     review: {
         type: String,

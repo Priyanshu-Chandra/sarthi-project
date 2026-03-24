@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom"
 
 import { getUserEnrolledCourses } from "../../../services/operations/profileAPI"
 import Img from './../../common/Img';
+import toast from "react-hot-toast"
 
 
 
@@ -92,9 +93,14 @@ export default function EnrolledCourses() {
                 <div
                   className="flex sm:w-[45%] cursor-pointer items-center gap-4 px-5 py-3"
                   onClick={() => {
-                    navigate(
-                      `/view-course/${course?._id}/section/${course.courseContent?.[0]?._id}/sub-section/${course.courseContent?.[0]?.subSection?.[0]?._id}`
-                    )
+                    const sectionId = course.courseContent?.[0]?._id;
+                    const subSectionId = course.courseContent?.[0]?.subSection?.[0]?._id;
+                    
+                    if (sectionId && subSectionId) {
+                      navigate(`/view-course/${course._id}/section/${sectionId}/sub-section/${subSectionId}`);
+                    } else {
+                      toast.error("Course content is not published yet.");
+                    }
                   }}
                 >
                   <Img

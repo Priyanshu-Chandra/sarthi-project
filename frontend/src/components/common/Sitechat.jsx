@@ -1,5 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { matchPath, useLocation } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 // ── helpers ──────────────────────────────────────────────
 const STORAGE_KEY = "all_chats";
@@ -49,15 +53,34 @@ export default function SiteChat() {
   const chatRef = useRef();
   const messagesEndRef = useRef();
 
+  // ── typing effect ──────────────────────────────────────
+  const [isWaiting, setIsWaiting] = useState(false);   // waiting for API
+  const [typingText, setTypingText] = useState(null);   // full AI reply being animated
+  const [displayedLen, setDisplayedLen] = useState(0);  // chars revealed so far
+
+  // Reveal chars incrementally; self-terminates when done
+  useEffect(() => {
+    if (!typingText) return;
+    if (displayedLen >= typingText.length) {
+      setTypingText(null);
+      return;
+    }
+    const t = setTimeout(
+      () => setDisplayedLen((n) => Math.min(n + 4, typingText.length)),
+      12 // ms per tick — adjust for slower/faster reveal
+    );
+    return () => clearTimeout(t);
+  }, [typingText, displayedLen]);
+
   // Persist chats to localStorage
   useEffect(() => {
     saveChats(chats);
   }, [chats]);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages, typing indicator, and reveal ticks
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chats, currentChatId]);
+  }, [chats, currentChatId, isWaiting, displayedLen]);
 
   // Sync currentChatId if active chat was deleted
   useEffect(() => {
@@ -103,9 +126,10 @@ export default function SiteChat() {
 
   async function sendMessage() {
     const message = input.trim();
-    if (!message) return;
+    if (!message || isWaiting || typingText) return; // prevent double-send while animating
     updateMessages((prev) => [...prev, { sender: "user", text: message }]);
     setInput("");
+    setIsWaiting(true);
 
     try {
       const res = await fetch(chatApiUrl, {
@@ -119,12 +143,19 @@ export default function SiteChat() {
       });
       if (!res.ok) throw new Error("failed");
       const data = await res.json();
-      updateMessages((prev) => [...prev, { sender: "ai", text: data.reply }]);
+      const reply = data.reply ?? "No response.";
+      // Save full text to storage immediately so it persists on refresh
+      updateMessages((prev) => [...prev, { sender: "ai", text: reply }]);
+      // Then animate the reveal
+      setDisplayedLen(0);
+      setTypingText(reply);
     } catch {
-      updateMessages((prev) => [
-        ...prev,
-        { sender: "ai", text: "Server error. Please try again." },
-      ]);
+      const errMsg = "Server error. Please try again.";
+      updateMessages((prev) => [...prev, { sender: "ai", text: errMsg }]);
+      setDisplayedLen(0);
+      setTypingText(errMsg);
+    } finally {
+      setIsWaiting(false);
     }
   }
 
@@ -193,18 +224,80 @@ export default function SiteChat() {
                   Start a conversation…
                 </p>
               )}
-              {messages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`p-2 rounded-md text-xs max-w-[90%] ${
-                    msg.sender === "user"
-                      ? "bg-blue-100 ml-auto text-right"
-                      : "bg-gray-200"
-                  }`}
-                >
-                  {msg.text}
+              {(() => {
+                // Find index of last AI message so we can animate it
+                const lastAiIdx = messages.reduce(
+                  (acc, m, i) => (m.sender === "ai" ? i : acc),
+                  -1
+                );
+                return messages.map((msg, idx) => {
+                  // Determine display text: animate only the latest AI message
+                  const isLastAi = idx === lastAiIdx;
+                  const displayText =
+                    isLastAi && typingText
+                      ? msg.text.slice(0, displayedLen)
+                      : msg.text;
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-2 rounded-md text-xs max-w-[90%] ${
+                        msg.sender === "user"
+                          ? "bg-blue-100 ml-auto text-right"
+                          : "bg-gray-200 text-left"
+                      }`}
+                    >
+                      {msg.sender === "user" ? (
+                        displayText
+                      ) : (
+                        <div className="chat-ai-response">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              code({ node, inline, className, children, ...props }) {
+                                const match = /language-(\w+)/.exec(className || "");
+                                return !inline ? (
+                                  <SyntaxHighlighter
+                                    style={oneDark}
+                                    language={match ? match[1] : "text"}
+                                    PreTag="div"
+                                    customStyle={{
+                                      borderRadius: "6px",
+                                      fontSize: "0.72rem",
+                                      margin: "0.4rem 0",
+                                      padding: "0.75rem",
+                                    }}
+                                    {...props}
+                                  >
+                                    {String(children).replace(/\n$/, "")}
+                                  </SyntaxHighlighter>
+                                ) : (
+                                  <code
+                                    className="bg-gray-300 px-1 rounded font-mono text-[11px]"
+                                    {...props}
+                                  >
+                                    {children}
+                                  </code>
+                                );
+                              },
+                            }}
+                          >
+                            {displayText}
+                          </ReactMarkdown>
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+
+              {/* "AI is typing..." indicator */}
+              {(isWaiting || typingText) && (
+                <div className="bg-gray-200 text-gray-500 text-xs px-3 py-2 rounded-md max-w-[60%] italic animate-pulse">
+                  AI is typing…
                 </div>
-              ))}
+              )}
+
               <div ref={messagesEndRef} />
             </div>
 

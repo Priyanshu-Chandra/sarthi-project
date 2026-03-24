@@ -11,6 +11,8 @@ import { IoIosArrowBack } from "react-icons/io"
 import { IoMdClose } from 'react-icons/io'
 import { HiMenuAlt1 } from 'react-icons/hi'
 
+import { fetchTestsByCourse } from "../../../services/operations/quizAPI"
+
 
 
 export default function VideoDetailsSidebar({ setReviewModal }) {
@@ -29,8 +31,31 @@ export default function VideoDetailsSidebar({ setReviewModal }) {
     completedLectures,
   } = useSelector((state) => state.viewCourse)
 
-
+  const { token } = useSelector((state) => state.auth)
   const { courseViewSidebar } = useSelector(state => state.sidebar)
+
+  // Course tests
+  const [courseTests, setCourseTests] = useState([])
+  const [testsLoading, setTestsLoading] = useState(false)
+
+  // Fetch tests for this course
+  useEffect(() => {
+    const loadTests = async () => {
+      if (!courseEntireData?._id) return
+      setTestsLoading(true)
+      try {
+        const res = await fetchTestsByCourse(courseEntireData._id, token)
+        if (res?.tests) {
+          setCourseTests(res.tests)
+        }
+      } catch (err) {
+        console.log("Failed to load course tests", err)
+      } finally {
+        setTestsLoading(false)
+      }
+    }
+    loadTests()
+  }, [courseEntireData?._id, token])
 
 
   // set which section - subSection is selected 
@@ -46,6 +71,10 @@ export default function VideoDetailsSidebar({ setReviewModal }) {
   }, [courseSectionData, courseEntireData, location.pathname])
 
 
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+  };
 
 
   return (
@@ -74,7 +103,6 @@ export default function VideoDetailsSidebar({ setReviewModal }) {
             {/* add review button */}
             <IconBtn
               text="Add Review"
-              // customClasses="ml-auto"
               onclick={() => setReviewModal(true)}
             />
           </div>
@@ -103,8 +131,11 @@ export default function VideoDetailsSidebar({ setReviewModal }) {
                   {section?.sectionName}
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-[12px] font-medium">
-                    Lession {section?.subSection.length}
+                  <span className="text-[12px] font-medium gap-2 flex">
+                    <span>{section?.subSection?.length || 0} Lession{(section?.subSection?.length !== 1) ? "s" : ""}</span>
+                    {courseTests.filter(t => t.sectionId && t.sectionId.toString() === section?._id?.toString()).length > 0 && (
+                      <span className="text-yellow-100">• {courseTests.filter(t => t.sectionId && t.sectionId.toString() === section?._id?.toString()).length} Quiz</span>
+                    )}
                   </span>
                   <span
                     className={`${activeStatus === section?._id
@@ -141,10 +172,39 @@ export default function VideoDetailsSidebar({ setReviewModal }) {
                       {topic.title}
                     </div>
                   ))}
+                  
+                  {/* Render tests for this section */}
+                  {courseTests.filter(t => t.sectionId && t.sectionId.toString() === section?._id?.toString()).map((test, i) => (
+                    <div
+                      className={`flex flex-col gap-1 px-5 py-3 text-left text-sm cursor-pointer ${videoBarActive === test._id
+                        ? "bg-yellow-200 font-semibold text-richblack-800"
+                        : "hover:bg-richblack-900 text-richblack-5"
+                        } `}
+                      key={`test-${test._id}`}
+                      onClick={() => {
+                        navigate(`/view-course/${courseEntireData?._id}/test/${test._id}`)
+                        setVideoBarActive(test._id)
+                        if (courseViewSidebar && window.innerWidth <= 640) {
+                          dispatch(setCourseViewSidebar(false));
+                        }
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>📝</span>
+                        <span>{test.title}</span>
+                      </div>
+                      <div className="text-[11px] text-richblack-300 flex gap-2 pl-6">
+                        <span>⏱ {formatTime(test.timeLimitSeconds)}</span>
+                        <span>•</span>
+                        <span>Max {test.maxAttempts} attempts</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           ))}
+
         </div>
       </div>
     </>

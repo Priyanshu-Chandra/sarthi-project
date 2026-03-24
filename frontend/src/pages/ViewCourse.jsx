@@ -59,7 +59,7 @@ export default function ViewCourse() {
 
     })()
 
-  }, [])
+  }, [courseId, token, dispatch])
 
 
   // sidebar logic
@@ -98,21 +98,9 @@ export default function ViewCourse() {
           <VideoDetailsSidebar setReviewModal={setReviewModal} />
         )}
 
-        <div className="h-[calc(100vh-3.5rem)] flex-1 overflow-auto mt-14">
+        <div className="h-[calc(100vh-3.5rem)] flex-1 overflow-auto mt-14" id="view-course-scroll-container">
 
-          {/* ⭐ SHOW QUIZ BUTTON ONLY IF QUIZ EXISTS */}
-          {quizAvailable && (
-            <div className="flex justify-end mr-6 mb-4">
-              <button
-                onClick={() => navigate(`/quiz/${courseId}`)}
-                className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded"
-              >
-                Practice Quiz
-              </button>
-            </div>
-          )}
-
-          <div className="mx-6">
+          <div className="mx-6 mt-6">
             <Outlet />
           </div>
 

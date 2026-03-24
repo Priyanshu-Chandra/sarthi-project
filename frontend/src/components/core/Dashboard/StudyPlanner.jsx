@@ -5,12 +5,19 @@ const BASE_URL = import.meta.env.VITE_APP_BASE_URL;
 const LEVELS = ["beginner", "intermediate", "advanced"];
 
 // ── JSON Week card renderer ──────────────────────────────────────────────────
-function PlanDisplay({ plan, planId, token, setPlan }) {
-  if (!plan || !plan.weeks || !Array.isArray(plan.weeks)) {
+function PlanDisplay({ plan, planId, token, setPlan, onRegenerate }) {
+  if (!plan || !plan.weeks || !Array.isArray(plan.weeks) || plan.weeks.length === 0) {
     return (
-      <div className="bg-richblack-800 border border-richblack-700 rounded-xl p-6 text-richblack-200">
-        <p>No valid study plan data was returned from the server.</p>
-        <pre className="mt-4 text-xs overflow-auto">{JSON.stringify(plan, null, 2)}</pre>
+      <div className="bg-richblack-800 border-l-4 border-pink-500 rounded-r-xl p-6 text-richblack-200">
+        <h3 className="text-lg font-bold text-pink-300 mb-2">Plan Generation Failed</h3>
+        <p>No valid study plan data was returned from the AI. The AI might have failed to format your roadmap. Please try generating it again.</p>
+        <button
+          onClick={onRegenerate}
+          className="mt-4 rounded-lg bg-pink-500 hover:bg-pink-600 focus:outline-none transition px-6 py-2 text-sm font-semibold text-white"
+        >
+          Regenerate Roadmap
+        </button>
+        <pre className="mt-4 text-[10px] overflow-auto text-richblack-400 max-h-40">{JSON.stringify(plan, null, 2)}</pre>
       </div>
     );
   }
@@ -261,6 +268,29 @@ export default function StudyPlanner() {
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   }
 
+  async function handleDelete(e, planId) {
+    e.stopPropagation(); // Prevent the card's onClick (loadPlan) from firing
+    if (!window.confirm("Are you sure you want to permanently delete this roadmap?")) return;
+    try {
+      const res = await fetch(`${BASE_URL}/api/chat/study-plan/${planId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message);
+      // Remove from list
+      setMyPlans((prev) => prev.filter((p) => p._id !== planId));
+      // Clear active view if deleted plan was loaded
+      if (activePlanId === planId) {
+        setPlan(null);
+        setActivePlanId(null);
+      }
+    } catch (err) {
+      console.error("Delete error:", err);
+      alert("Failed to delete the roadmap. Please try again.");
+    }
+  }
+
   const inputCls =
     "rounded-lg bg-richblack-700 border border-richblack-600 px-4 py-2.5 text-sm text-richblack-5 placeholder-richblack-400 outline-none focus:border-yellow-50 transition w-full";
 
@@ -274,12 +304,23 @@ export default function StudyPlanner() {
             {myPlans.map((p) => (
               <div 
                 key={p._id} 
-                className={`border rounded-xl p-5 cursor-pointer transition ${
+                className={`relative border rounded-xl p-5 cursor-pointer transition ${
                   activePlanId === p._id ? "bg-richblack-800 border-yellow-50 ring-1 ring-yellow-50 shadow-md shadow-yellow-50/20" : "bg-richblack-800 border-richblack-700 hover:border-richblack-500"
                 }`}
                 onClick={() => loadPlan(p)}
               >
-                <div className="flex justify-between items-start mb-2">
+                {/* Delete button */}
+                <button
+                  onClick={(e) => handleDelete(e, p._id)}
+                  title="Delete this roadmap"
+                  className="absolute top-3 right-3 text-richblack-400 hover:text-pink-400 transition p-1 rounded-lg hover:bg-richblack-700"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+
+                <div className="flex justify-between items-start mb-2 pr-6">
                   <h3 className="font-semibold text-richblack-5 line-clamp-2">{p.goal}</h3>
                 </div>
                 <div className="flex gap-2 text-xs text-richblack-300">
@@ -349,7 +390,7 @@ export default function StudyPlanner() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold uppercase tracking-wider text-richblack-300">
-              Weaknesses / Focus Areas
+              Weaknesses / Focus Areas <span className="text-[10px] text-richblack-400 capitalize normal-case tracking-normal">(Optional)</span>
             </label>
             <input name="weaknesses" value={form.weaknesses} onChange={handleChange}
               placeholder="e.g. state management" className={inputCls} />
@@ -390,7 +431,7 @@ export default function StudyPlanner() {
             </button>
           </div>
 
-          <PlanDisplay plan={plan} planId={activePlanId} token={token} setPlan={setPlan} />
+          <PlanDisplay plan={plan} planId={activePlanId} token={token} setPlan={setPlan} onRegenerate={handleSubmit} />
           
           {/* ── Adapt Plan ── */}
           <div className="mt-8 bg-richblack-800 border-l-4 border-caribbeangreen-300 rounded-r-xl px-6 py-5">

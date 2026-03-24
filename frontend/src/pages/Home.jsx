@@ -15,6 +15,7 @@ import Course_Slider from '../components/core/Catalog/Course_Slider'
 import ResumeButton from "../components/common/ResumeButton";
 
 import { getCatalogPageData } from '../services/operations/pageAndComponentData'
+import { fetchCourseCategories } from '../services/operations/courseDetailsAPI'
 
 import { MdOutlineRateReview } from 'react-icons/md'
 import { FaArrowRight } from "react-icons/fa"
@@ -68,15 +69,28 @@ const Home = () => {
 
     // get courses data
     const [CatalogPageData, setCatalogPageData] = useState(null);
-    const categoryID = "6506c9dff191d7ffdb4a3fe2" // hard coded
+    const [categoryID, setCategoryID] = useState(null);
     const dispatch = useDispatch();
+
+    // Dynamically pick the first available category instead of a hardcoded ID
+    useEffect(() => {
+        const bootstrapCategory = async () => {
+            try {
+                const categories = await fetchCourseCategories();
+                if (categories && categories.length > 0) {
+                    setCategoryID(categories[0]._id);
+                }
+            } catch (err) {
+                console.log("Could not fetch categories for home page:", err);
+            }
+        };
+        bootstrapCategory();
+    }, []);
 
     useEffect(() => {
         const fetchCatalogPageData = async () => {
-
-            const result = await getCatalogPageData(categoryID, dispatch);
+            const result = await getCatalogPageData(categoryID);
             setCatalogPageData(result);
-            // console.log("page data ==== ",CatalogPageData);
         }
         if (categoryID) {
             fetchCatalogPageData();

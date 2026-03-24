@@ -5,7 +5,8 @@ const {
   createStudyPlan, 
   getUserStudyPlans, 
   updateStudyPlanProgress, 
-  adaptExistingStudyPlan 
+  adaptExistingStudyPlan,
+  deleteStudyPlan
 } = require("../services/studyPlannerService");
 const { auth, isStudent } = require("../middleware/auth");
 
@@ -78,6 +79,18 @@ router.post("/study-plan/:planId/adapt", auth, isStudent, async (req, res) => {
   } catch (err) {
     console.error("Adapt plan error:", err);
     res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+router.delete("/study-plan/:planId", auth, isStudent, async (req, res) => {
+  try {
+    const { planId } = req.params;
+    await deleteStudyPlan(req.user.id, planId);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("Delete plan error:", err);
+    const is404 = err.message === "Study plan not found or access denied";
+    res.status(is404 ? 404 : 500).json({ success: false, message: err.message || "Server error" });
   }
 });
 
