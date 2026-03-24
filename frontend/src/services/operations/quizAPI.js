@@ -6,14 +6,14 @@ const {
   GET_QUIZZES_BY_SUBJECT_API,
   GET_QUIZ_BY_ID_API,
   SUBMIT_QUIZ_API,
+  GET_RESULTS_API,
 } = quizEndpoints
 
 
 
-//fetch quiz by course ID
+// Fetch quiz by course ID (starts an attempt session — for taking a test)
 export const fetchQuizByCourse = async (courseId, token) => {
   try {
-
     const response = await apiConnector(
       "GET",
       `${quizEndpoints.GET_QUIZ_BY_COURSE_API}/${courseId}`,
@@ -26,11 +26,29 @@ export const fetchQuizByCourse = async (courseId, token) => {
     return response.data;
 
   } catch (error) {
-    // print on  backend console
-    console.log("QUIZ FETCH ERROR 1");
     console.log("QUIZ FETCH ERROR 1", error);
   }
 };
+
+// Fetch all tests for a course (listing only — no attempt session)
+export const fetchTestsByCourse = async (courseId, token) => {
+  try {
+    const response = await apiConnector(
+      "GET",
+      `${quizEndpoints.GET_TESTS_BY_COURSE_API}/${courseId}/list`,
+      null,
+      {
+        Authorization: `Bearer ${token}`
+      }
+    );
+
+    return response.data;
+
+  } catch (error) {
+    console.log("TESTS LIST FETCH ERROR", error);
+  }
+};
+
 // Get subjects
 export const fetchQuizSubjects = async (token) => {
   try {
@@ -108,11 +126,16 @@ export const fetchQuizById = async (quizId, token) => {
 export const submitQuiz = async (data, token) => {
 
   try {
+    const { answers, tabSwitchCount = 0, ...restData } = data
 
     const response = await apiConnector(
       "POST",
       SUBMIT_QUIZ_API,
-      data,
+      {
+        ...restData,
+        answers,
+        tabSwitchCount,
+      },
       {
         Authorization: `Bearer ${token}`
       }
@@ -150,4 +173,59 @@ export const createQuiz = async (data, token) => {
   throw error // ⭐ important
 }
 
+}
+export const generateQuizAI = async (data, token) => {
+  try {
+
+    const response = await apiConnector(
+      "POST",
+      `${quizEndpoints.GENERATE_AI_API}`,
+      data,
+      {
+        Authorization: `Bearer ${token}`
+      }
+    )
+
+    return response.data
+
+  } catch (error) {
+    console.log("AI GENERATION ERROR", error)
+    throw error
+  }
+}
+
+// Get student results
+export const fetchStudentResults = async (token) => {
+  try {
+    const response = await apiConnector(
+      "GET",
+      GET_RESULTS_API,
+      null,
+      {
+        Authorization: `Bearer ${token}`
+      }
+    )
+    return response.data
+  } catch (error) {
+    console.log("RESULTS FETCH ERROR", error)
+    throw error
+  }
+}
+
+// Delete a test (Instructor)
+export const deleteTest = async (testId, token) => {
+  try {
+    const response = await apiConnector(
+      "DELETE",
+      `${quizEndpoints.DELETE_TEST_API}/${testId}`,
+      null,
+      {
+        Authorization: `Bearer ${token}`
+      }
+    )
+    return response.data
+  } catch (error) {
+    console.log("TEST DELETE ERROR", error)
+    throw error
+  }
 }

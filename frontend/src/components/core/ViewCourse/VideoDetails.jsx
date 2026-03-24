@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react"
 import { useDispatch, useSelector } from "react-redux"
-import { useLocation } from "react-router-dom"
-import { useNavigate, useParams } from "react-router-dom"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 
 import "video-react/dist/video-react.css"
 import { BigPlayButton, Player } from "video-react"
@@ -11,13 +10,10 @@ import { updateCompletedLectures } from "../../../slices/viewCourseSlice"
 import { setCourseViewSidebar } from "../../../slices/sidebarSlice"
 
 import IconBtn from "../../common/IconBtn"
-
 import { HiMenuAlt1 } from 'react-icons/hi'
-
 
 const VideoDetails = () => {
   const { courseId, sectionId, subSectionId } = useParams()
-
   const navigate = useNavigate()
   const location = useLocation()
   const playerRef = useRef(null)
@@ -37,15 +33,12 @@ const VideoDetails = () => {
       if (!courseId && !sectionId && !subSectionId) {
         navigate(`/dashboard/enrolled-courses`)
       } else {
-        // console.log("courseSectionData", courseSectionData)
         const filteredData = courseSectionData.filter(
           (course) => course._id === sectionId
         )
-        // console.log("filteredData", filteredData)
         const filteredVideoData = filteredData?.[0]?.subSection.filter(
           (data) => data._id === subSectionId
         )
-        // console.log("filteredVideoData = ", filteredVideoData)
         if (filteredVideoData) setVideoData(filteredVideoData[0])
         setPreviewSource(courseEntireData.thumbnail)
         setVideoEnded(false)
@@ -149,33 +142,25 @@ const VideoDetails = () => {
 
   const { courseViewSidebar } = useSelector(state => state.sidebar)
 
-  // this will hide course video , title , desc, if sidebar is open in small device
-  // for good looking i have try this 
-  if (courseViewSidebar && window.innerWidth <= 640) return;
+  if (courseViewSidebar && window.innerWidth <= 640) return
 
   return (
     <div className="flex flex-col gap-5 text-white">
 
-      {/* open - close side bar icons */}
-      <div className="sm:hidden text-white absolute left-7 top-3 cursor-pointer " onClick={() => dispatch(setCourseViewSidebar(!courseViewSidebar))}>
-        {
-          !courseViewSidebar && <HiMenuAlt1 size={33} />
-        }
+      {/* Sidebar toggle */}
+      <div className="sm:hidden absolute left-7 top-3 cursor-pointer">
+        {!courseViewSidebar && (
+          <HiMenuAlt1 size={33} onClick={() => dispatch(setCourseViewSidebar(!courseViewSidebar))} />
+        )}
       </div>
 
-
       {!videoData ? (
-        <img
-          src={previewSource}
-          alt="Preview"
-          className="h-full w-full rounded-md object-cover"
-        />
+        <img src={previewSource} alt="Preview" className="h-full w-full rounded-md object-cover" />
       ) : (
         <Player
           ref={playerRef}
           aspectRatio="16:9"
           playsInline
-          autoPlay
           onEnded={() => setVideoEnded(true)}
           src={videoData?.videoUrl}
         >

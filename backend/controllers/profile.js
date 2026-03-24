@@ -205,28 +205,38 @@ exports.getEnrolledCourses = async (req, res) => {
         let userDetails = await User.findOne({ _id: userId, })
             .populate({
                 path: "courses",
-                populate: {
-                    path: "courseContent",
-                    populate: {
-                        path: "subSection",
+                populate: [
+                    {
+                        path: "courseContent",
+                        populate: {
+                            path: "subSection",
+                        },
                     },
-                },
+                    {
+                        path: "ratingAndReviews"
+                    }
+                ]
             })
             .exec()
 
         userDetails = userDetails.toObject()
 
+        // Remove deleted courses that are null
+        userDetails.courses = (userDetails.courses || []).filter((course) => course !== null)
+
         var SubsectionLength = 0
         for (var i = 0; i < userDetails.courses.length; i++) {
             let totalDurationInSeconds = 0
             SubsectionLength = 0
-            for (var j = 0; j < userDetails.courses[i].courseContent.length; j++) {
-                totalDurationInSeconds += userDetails.courses[i].courseContent[
+            const currentCourseContent = userDetails.courses[i].courseContent || [];
+
+            for (var j = 0; j < currentCourseContent.length; j++) {
+                totalDurationInSeconds += currentCourseContent[
                     j
                 ].subSection.reduce((acc, curr) => acc + parseInt(curr.timeDuration), 0)
 
                 userDetails.courses[i].totalDuration = convertSecondsToDuration(totalDurationInSeconds)
-                SubsectionLength += userDetails.courses[i].courseContent[j].subSection.length
+                SubsectionLength += currentCourseContent[j].subSection.length
             }
 
             let courseProgressCount = await CourseProgress.findOne({
@@ -260,7 +270,7 @@ exports.getEnrolledCourses = async (req, res) => {
     } catch (error) {
         return res.status(500).json({
             success: false,
-            message: error.message,
+            message: error.stack,
         })
     }
 }

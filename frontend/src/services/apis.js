@@ -79,13 +79,17 @@ export const settingsEndpoints = {
   CHANGE_PASSWORD_API: BASE_URL + "/api/v1/auth/changepassword",
   DELETE_PROFILE_API: BASE_URL + "/api/v1/profile/deleteProfile",
 }
-// QUIZ ENDPOINTS
+
+// TEST ENDPOINTS (previously /api/v1/quiz, now cleaned up to /api/v1/test)
 export const quizEndpoints = {
-  CREATE_QUIZ_API: BASE_URL + "/api/v1/quiz/create",
-  GET_SUBJECTS_API: BASE_URL + "/api/v1/quiz/subjects",
-  GET_QUIZ_BY_COURSE_API: BASE_URL + "/api/v1/quiz/course",
-  GET_QUIZZES_BY_SUBJECT_API: BASE_URL + "/api/v1/quiz/by-subject",
-  GET_QUIZ_BY_ID_API: BASE_URL + "/api/v1/quiz",
-  SUBMIT_QUIZ_API: BASE_URL + "/api/v1/quiz/submit",
-  GET_RESULTS_API: BASE_URL + "/api/v1/quiz/results"
+  CREATE_QUIZ_API: BASE_URL + "/api/v1/test/create",
+  GENERATE_AI_API: BASE_URL + "/api/v1/test/generate-ai",
+  GET_SUBJECTS_API: BASE_URL + "/api/v1/test/subjects",
+  GET_QUIZ_BY_COURSE_API: BASE_URL + "/api/v1/test/course",
+  GET_TESTS_BY_COURSE_API: BASE_URL + "/api/v1/test/course",
+  GET_QUIZZES_BY_SUBJECT_API: BASE_URL + "/api/v1/test/by-subject",
+  GET_QUIZ_BY_ID_API: BASE_URL + "/api/v1/test",
+  SUBMIT_QUIZ_API: BASE_URL + "/api/v1/test/submit",
+  GET_RESULTS_API: BASE_URL + "/api/v1/test/results",
+  DELETE_TEST_API: BASE_URL + "/api/v1/test",
 }

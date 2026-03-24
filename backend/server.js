@@ -43,8 +43,7 @@ const chatRoute = require("./routes/chatRoute");
 app.use("/api/chat", chatRoute);
 app.use("/api", studyPlanner);
 
-const quizRoutes = require('./routes/quizRoute.js');
-//import quizRoutes from "./routes/quizRoute.js";
+const testRoutes = require("./routes/testRoute.js");
 
 
 
@@ -61,7 +60,7 @@ app.use('/api/v1/auth', userRoutes);
 app.use('/api/v1/profile', profileRoutes);
 app.use('/api/v1/payment', paymentRoutes);
 app.use('/api/v1/course', courseRoutes);
-app.use('/api/v1/quiz', quizRoutes);
+app.use('/api/v1/test', testRoutes);
 
 
 

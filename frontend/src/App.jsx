@@ -45,6 +45,7 @@ import AllStudents from './components/core/Dashboard/AllStudents';
 import AllInstructors from './components/core/Dashboard/AllInstructors';
 
 import Quiz from "./pages/Quiz";
+import AttemptQuiz from "./components/core/Quiz/AttemptQuiz";
 import Sitechat from "./components/common/Sitechat";
 function App() {
 
@@ -141,7 +142,7 @@ function App() {
         />
 
 
-      <Route path="/quiz/:courseId" element={<Quiz />} />
+
 
         {/* Protected Route - for Only Logged in User */}
         {/* Dashboard */}
@@ -198,10 +199,14 @@ function App() {
           }
         >
           {user?.accountType === ACCOUNT_TYPE.STUDENT && (
-            <Route
-              path="view-course/:courseId/section/:sectionId/sub-section/:subSectionId"
-              element={<VideoDetails />}
-            />
+            <>
+              <Route
+                path="view-course/:courseId/section/:sectionId/sub-section/:subSectionId"
+                element={<VideoDetails />}
+              />
+              <Route path="quiz/:courseId" element={<Quiz />} />
+              <Route path="view-course/:courseId/test/:id" element={<AttemptQuiz />} />
+            </>
           )}
         </Route>
 

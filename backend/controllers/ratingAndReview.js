@@ -1,6 +1,6 @@
 const User = require('../models/user')
 const Course = require('../models/course')
-const RatingAndReview = require('../models/ratingAndReview')
+const RatingAndReview = require('../models/RatingAndReview')
 const mongoose = require('mongoose');
 
 // ================ Create Rating ================
@@ -20,10 +20,10 @@ exports.createRating = async (req, res) => {
         }
 
         // check user is enrollded in course ?
-        const courseDetails = await Course.findOne({ _id: courseId },
-            {
-                studentsEnrolled: { $elemMatch: { $eq: userId } }
-            });
+        const courseDetails = await Course.findOne({ 
+            _id: courseId, 
+            studentsEnrolled: { $elemMatch: { $eq: userId } }
+        });
 
 
         if (!courseDetails) {

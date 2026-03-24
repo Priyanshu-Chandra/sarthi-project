@@ -86,6 +86,14 @@ async function adaptExistingStudyPlan(planId, message = "") {
   };
 }
 
+async function deleteStudyPlan(userId, planId) {
+  const deleted = await StudyPlan.findOneAndDelete({ _id: planId, user: userId });
+  if (!deleted) {
+    throw new Error("Study plan not found or access denied");
+  }
+  return { planId: deleted._id.toString() };
+}
+
 async function getUserStudyPlans(userId) {
   return await StudyPlan.find({ user: userId }).sort({ createdAt: -1 });
 }
@@ -95,4 +103,5 @@ module.exports = {
   updateStudyPlanProgress,
   adaptExistingStudyPlan,
   getUserStudyPlans,
+  deleteStudyPlan,
 };

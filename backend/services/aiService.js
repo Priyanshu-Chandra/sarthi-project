@@ -9,6 +9,15 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 const MAX_COMBINED_CONTEXT_LENGTH = 2400;
+const RESPONSE_FORMAT_INSTRUCTIONS = `Response formatting rules:
+
+## Use headings with ##
+- Use bullet points (-) where helpful
+- Use short paragraphs
+- Add spacing between sections
+- Keep answers clean and readable
+- Do NOT return one large paragraph
+- Always respond in clear markdown-like structure`;
 
 function formatHistory(history = []) {
   return history
@@ -171,8 +180,12 @@ async function generateAIResponse(message, history = [], courseId = null) {
     const prompt = courseId
       ? `You are an AI tutor.
 
-* Use course context for course-related questions
-* Use platform context for general questions
+Use these rules:
+- Use course context for course-related questions
+- Use platform context for general questions
+- If the question is outside the course, clearly say it is not covered in the course content
+
+${RESPONSE_FORMAT_INSTRUCTIONS}
 
 ${context}
 
@@ -184,6 +197,8 @@ ${message}`
       : `System:
 You are an AI tutor for Sarthi. Answer only using platform context when possible.
 If answer is not in context, answer generally but mention it's not from platform.
+
+${RESPONSE_FORMAT_INSTRUCTIONS}
 
 Context:
 
@@ -241,8 +256,8 @@ Requirements:
 * Personalize for Level (${level || "Not specified"}):
   - If beginner: Focus on basics, fundamentals, and maintain a slower pace.
   - If advanced: Assume basics are known, move fast, and dive into deeper, advanced topics.
-* Personalize for Weaknesses (${formatWeaknesses(weaknesses)}):
-  - Actively allocate extra time and focused practice days specifically for these weak topics.
+${weaknesses && weaknesses.length > 0 ? `* Personalize for Weaknesses (${formatWeaknesses(weaknesses)}):
+  - Actively allocate extra time and focused practice days specifically for these weak topics.` : ""}
 * Recommend relevant available courses when useful.
 * In recommendedCourses, return objects with "name" and "reason".
 * You may align topics with available courses when it helps, but keep the plan simple.
