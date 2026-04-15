@@ -163,32 +163,40 @@ const createTest = async (req, res) => {
       return res.status(400).json({ success: false, error: "Course not found" });
     }
     const courseTopic = course.category?.name || "Uncategorized";
-    
+
     let finalQuestions = [];
 
     if (testType === "MCQ") {
       // Isolate new inline manually/AI added questions to validate
-      const newInline = questions.filter(q => !q.mcqId);
+      const newInline = questions.filter((q) => !q.mcqId);
       const validatedInline = validateQuestions(newInline);
 
       if (validatedInline.length !== newInline.length) {
         return res.status(400).json({
           success: false,
-          error: "All new questions must have exactly 4 options and a valid correctAnswer (0-3)",
+          error:
+            "All new questions must have exactly 4 options and a valid correctAnswer (0-3)",
         });
       }
 
       const MCQQuestion = require("../models/MCQQuestion");
 
       // Batch query existing MCQ refs — avoids N+1 DB calls
-      const existingMcqIds = questions.filter(q => q.mcqId).map(q => q.mcqId);
-      const existingMcqs = await MCQQuestion.find({ _id: { $in: existingMcqIds } });
-      const mcqMap = new Map(existingMcqs.map(m => [m._id.toString(), m]));
+      const existingMcqIds = questions
+        .filter((q) => q.mcqId)
+        .map((q) => q.mcqId);
+      const existingMcqs = await MCQQuestion.find({
+        _id: { $in: existingMcqIds },
+      });
+      const mcqMap = new Map(existingMcqs.map((m) => [m._id.toString(), m]));
 
       for (const q of questions) {
         if (q.mcqId) {
           const mcq = mcqMap.get(q.mcqId.toString());
-          if (!mcq) return res.status(400).json({ success: false, error: `MCQ not found: ${q.mcqId}` });
+          if (!mcq)
+            return res
+              .status(400)
+              .json({ success: false, error: `MCQ not found: ${q.mcqId}` });
           finalQuestions.push({ type: "MCQ", mcqId: mcq._id });
         } else {
           // Auto-save inline (manual/AI) MCQs into MCQQuestion collection
@@ -196,7 +204,7 @@ const createTest = async (req, res) => {
             question: q.question,
             options: q.options,
             correctAnswer: q.correctAnswer,
-            topic: q.topic || courseTopic
+            topic: q.topic || courseTopic,
           });
           finalQuestions.push({ type: "MCQ", mcqId: newMcq._id });
         }
