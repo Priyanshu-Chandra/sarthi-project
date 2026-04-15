@@ -189,9 +189,6 @@ const createTest = async (req, res) => {
         if (q.mcqId) {
           const mcq = mcqMap.get(q.mcqId.toString());
           if (!mcq) return res.status(400).json({ success: false, error: `MCQ not found: ${q.mcqId}` });
-          if (mcq.topic !== courseTopic) {
-            return res.status(400).json({ success: false, error: `Topic mismatch: MCQ is '${mcq.topic}' but course is '${courseTopic}'` });
-          }
           finalQuestions.push({ type: "MCQ", mcqId: mcq._id });
         } else {
           // Auto-save inline (manual/AI) MCQs into MCQQuestion collection
@@ -216,9 +213,6 @@ const createTest = async (req, res) => {
         if (!q.problemId) return res.status(400).json({ success: false, error: "problemId is missing" });
         const problem = problemMap.get(q.problemId.toString());
         if (!problem) return res.status(400).json({ success: false, error: `Coding problem not found: ${q.problemId}` });
-        if (problem.topic !== courseTopic) {
-          return res.status(400).json({ success: false, error: `Topic mismatch: Problem is '${problem.topic}' but course is '${courseTopic}'` });
-        }
         finalQuestions.push({ type: "CODING", problemId: problem._id });
       }
     }
