@@ -196,7 +196,7 @@ const createTest = async (req, res) => {
             question: q.question,
             options: q.options,
             correctAnswer: q.correctAnswer,
-            topic: courseTopic
+            topic: q.topic || courseTopic
           });
           finalQuestions.push({ type: "MCQ", mcqId: newMcq._id });
         }
