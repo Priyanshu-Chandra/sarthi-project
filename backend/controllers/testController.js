@@ -149,8 +149,8 @@ const createTest = async (req, res) => {
     }
 
     if (testType === "MCQ") {
-      if (questions.length < 5 || questions.length > 50) {
-        return res.status(400).json({ success: false, error: "MCQ test must contain between 5 and 50 questions" });
+      if (questions.length < 1 || questions.length > 50) {
+        return res.status(400).json({ success: false, error: "MCQ test must contain between 1 and 50 questions" });
       }
     } else if (testType === "CODING") {
       if (questions.length < 1 || questions.length > 5) {
