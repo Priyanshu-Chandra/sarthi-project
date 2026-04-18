@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from "react";
-import { Route, Routes, useLocation, Link } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 
 import Home from "./pages/Home"
@@ -14,6 +14,7 @@ import Contact from "./pages/Contact";
 import PageNotFound from "./pages/PageNotFound";
 import CourseDetails from './pages/CourseDetails';
 import Catalog from './pages/Catalog';
+import VerifyCertificate from "./pages/VerifyCertificate";
 
 import Navbar from "./components/common/Navbar"
 
@@ -47,6 +48,18 @@ import AllInstructors from './components/core/Dashboard/AllInstructors';
 import Quiz from "./pages/Quiz";
 import AttemptQuiz from "./components/core/Quiz/AttemptQuiz";
 import Sitechat from "./components/common/Sitechat";
+
+import CodingPracticeHome from "./pages/CodingPractice/CodingPracticeHome";
+import ProblemList from "./pages/CodingPractice/ProblemList";
+import ProblemWorkspace from "./pages/CodingPractice/ProblemWorkspace";
+import OnlineCompiler from "./pages/CodingPractice/OnlineCompiler";
+import SubmissionHistory from "./pages/CodingPractice/SubmissionHistory";
+import Leaderboard from "./pages/CodingPractice/Leaderboard";
+import StudentDashboard from "./pages/StudentDashboard";
+import InstructorDashboard from "./pages/InstructorDashboard";
+import Achievements from "./pages/CodingPractice/Achievements";
+import SystemHealth from "./pages/SystemHealth";
+
 function App() {
 
   const { user } = useSelector((state) => state.profile)
@@ -141,8 +154,9 @@ function App() {
           }
         />
 
+        <Route path="verify/:certificateId" element={<VerifyCertificate />} />
 
-
+        <Route path="/quiz/:courseId" element={<Quiz />} />
 
         {/* Protected Route - for Only Logged in User */}
         {/* Dashboard */}
@@ -162,6 +176,7 @@ function App() {
               <Route path="dashboard/create-category" element={<CreateCategory />} />
               <Route path="dashboard/all-students" element={<AllStudents />} />
               <Route path="dashboard/all-instructors" element={<AllInstructors />} />
+              <Route path="dashboard/system-health" element={<SystemHealth />} />
             </>
           )}
 
@@ -174,6 +189,14 @@ function App() {
               <Route path="dashboard/enrolled-courses" element={<EnrolledCourses />} />
               <Route path="dashboard/purchase-history" element={<PurchaseHistory />} />
               <Route path="dashboard/study-planner" element={<StudyPlanner />} />
+              <Route path="dashboard/coding-practice" element={<CodingPracticeHome />} />
+              <Route path="dashboard/coding-practice/problems" element={<ProblemList />} />
+              <Route path="dashboard/coding-practice/problems/:id" element={<ProblemWorkspace />} />
+              <Route path="dashboard/coding-practice/submissions" element={<SubmissionHistory />} />
+              <Route path="dashboard/coding-practice/leaderboard" element={<Leaderboard />} />
+              <Route path="dashboard/coding-practice/compiler" element={<OnlineCompiler />} />
+              <Route path="dashboard/coding-practice/achievements" element={<Achievements />} />
+              <Route path="dashboard/student-analytics" element={<StudentDashboard />} />
             </>
           )}
 
@@ -185,6 +208,7 @@ function App() {
               <Route path="dashboard/add-course" element={<AddCourse />} />
               <Route path="dashboard/my-courses" element={<MyCourses />} />
               <Route path="dashboard/edit-course/:courseId" element={<EditCourse />} />
+              <Route path="dashboard/instructor-analytics/:testId" element={<InstructorDashboard />} />
             </>
           )}
         </Route>
@@ -210,6 +234,15 @@ function App() {
           )}
         </Route>
 
+        {/* Standalone Quiz Attempt Route */}
+        <Route
+          path="quiz/attempt/:id"
+          element={
+            <ProtectedRoute>
+              {user?.accountType === ACCOUNT_TYPE.STUDENT ? <AttemptQuiz /> : <PageNotFound />}
+            </ProtectedRoute>
+          }
+        />
 
 
 

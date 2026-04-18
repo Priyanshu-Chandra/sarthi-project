@@ -8,7 +8,7 @@ import { Player } from "video-react"
 
 
 
-export default function Upload({ name, label, register, setValue, errors, video = false, viewData = null, editData = null, }) {
+export default function Upload({ name, label, register, setValue, errors, video = false, viewData = null, editData = null, uploadProgress = 0 }) {
   // const { course } = useSelector((state) => state.course)
   const [selectedFile, setSelectedFile] = useState(null)
   const [previewSource, setPreviewSource] = useState(viewData ? viewData : editData ? editData : "")
@@ -24,7 +24,7 @@ export default function Upload({ name, label, register, setValue, errors, video 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: !video
       ? { "image/*": [".jpeg", ".jpg", ".png"] }
-      : { "video/*": [".mp4"] },
+      : { "video/*": [".mp4", ".mkv", ".mov", ".webm", ".wmv"] },
     onDrop,
   })
 
@@ -36,6 +36,14 @@ export default function Upload({ name, label, register, setValue, errors, video 
       setPreviewSource(reader.result)
     }
   }
+
+  useEffect(() => {
+    if (viewData) {
+      setPreviewSource(viewData)
+    } else if (editData) {
+      setPreviewSource(editData)
+    }
+  }, [viewData, editData])
 
   useEffect(() => {
     register(name, { required: true })
@@ -69,17 +77,19 @@ export default function Upload({ name, label, register, setValue, errors, video 
             )}
 
             {!viewData && (
-              <button
-                type="button"
-                onClick={() => {
-                  setPreviewSource("")
-                  setSelectedFile(null)
-                  setValue(name, null)
-                }}
-                className="mt-3 text-richblack-400 underline"
-              >
-                Cancel
-              </button>
+              <div className="mt-3 flex justify-center gap-x-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreviewSource("")
+                    setSelectedFile(null)
+                    setValue(name, null)
+                  }}
+                  className="rounded-md bg-richblack-600 py-1 px-4 text-xs font-medium text-richblack-5 hover:bg-richblack-500"
+                >
+                  Change Video
+                </button>
+              </div>
             )}
           </div>
         ) : (
@@ -96,6 +106,12 @@ export default function Upload({ name, label, register, setValue, errors, video 
               <span className="font-semibold text-yellow-50">Browse</span> a
               file
             </p>
+            <button
+              type="button"
+              className="mt-2 rounded-md bg-yellow-50 px-4 py-2 text-sm font-semibold text-richblack-900 shadow-[2px_2px_0px_0px_rgba(255,255,255,0.18)] transition-all duration-200 hover:scale-95 hover:shadow-none"
+            >
+              Select File
+            </button>
             <ul className="mt-10 flex list-disc justify-between space-x-12 text-center  text-xs text-richblack-200">
               <li>Aspect ratio 16:9</li>
               <li>Recommended size 1024x576</li>
@@ -103,6 +119,25 @@ export default function Upload({ name, label, register, setValue, errors, video 
           </div>
         )}
       </div>
+
+      {uploadProgress > 0 && (
+        <div className="mt-2 w-full">
+          <div className="bg-richblack-700 rounded-full h-2.5 overflow-hidden">
+            <div 
+              className={`h-full transition-all duration-300 ease-in-out ${uploadProgress === 100 ? "bg-caribbeangreen-300" : "bg-yellow-50"}`} 
+              style={{ width: `${uploadProgress}%` }}
+            ></div>
+          </div>
+          <div className="flex justify-between items-center mt-1">
+            <p className={`text-xs ${uploadProgress === 100 ? "text-caribbeangreen-300 font-bold" : "text-yellow-50"}`}>
+              {uploadProgress === 100 ? "✓ Upload Complete" : `${uploadProgress}% Uploading...`}
+            </p>
+            {uploadProgress === 100 && (
+              <p className="text-[10px] text-richblack-300">Processing on Cloudinary...</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {errors[name] && (
         <span className="ml-2 text-xs tracking-wide text-pink-200">

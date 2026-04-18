@@ -5,7 +5,56 @@ const answerSchema = new mongoose.Schema({
   selectedOption: Number,
   correctOption: Number,
   isCorrect: Boolean,
+  code: String,       // Added for coding tests
+  passRatio: Number,  // Added for coding tests
 });
+
+const questionSnapshotSchema = new mongoose.Schema(
+  {
+    mcqId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MCQQuestion",
+      required: false,
+    },
+    question: String,
+    options: [String],
+    correctAnswer: Number,
+  },
+  { _id: false },
+);
+
+const codingSubmissionSchema = new mongoose.Schema(
+  {
+    problemId:     { type: mongoose.Schema.Types.ObjectId, ref: "Problem" },
+    language:      { type: String },
+    code:          { type: String, maxlength
+      : 50000 },   // guard against large payloads
+    status: {
+      type: String,
+      enum: [
+        "Accepted",
+        "Wrong Answer",
+        "Compilation Error",
+        "Runtime Error",
+        "Time Limit Exceeded",
+        "Pending", // for async processing if needed
+      ],
+      default: "Pending",
+    },
+    executionTime: { type: String },
+    memory:        { type: String },
+
+    // Test case statistics
+    passedTestCases: { type: Number, default: 0 },
+    totalTestCases:  { type: Number, default: 0 },
+
+    // Timing & analytics
+    submittedAt: { type: Date, default: Date.now },
+    runCount:    { type: Number, default: 0 },           // how many times student ran code
+    failedTest:  { type: mongoose.Schema.Types.Mixed, default: null },
+  },
+  { _id: false }
+);
 
 const testResultSchema = new mongoose.Schema(
   {
@@ -33,17 +82,25 @@ const testResultSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["IN_PROGRESS", "COMPLETED"],
+      enum: ["IN_PROGRESS", "COMPLETED", "CHEATED"],
       default: "COMPLETED",
     },
     startedAt: {
       type: Date,
+    },
+    timeLimitSeconds: {
+      type: Number,
+      default: 0,
     },
     timeTakenSeconds: {
       type: Number,
       default: 0,
     },
     lastAttemptSessionToken: {
+      type: String,
+      default: "",
+    },
+    deviceId: {
       type: String,
       default: "",
     },
@@ -54,6 +111,22 @@ const testResultSchema = new mongoose.Schema(
     tabSwitchCount: {
       type: Number,
       default: 0,
+    },
+    multipleFacesDetected: {
+      type: Boolean,
+      default: false,
+    },
+    cameraDisabled: {
+      type: Boolean,
+      default: false,
+    },
+    lookingAwayCount: {
+      type: Number,
+      default: 0,
+    },
+    noiseDetected: {
+      type: Boolean,
+      default: false,
     },
     suspicious: {
       type: Boolean,
@@ -67,7 +140,9 @@ const testResultSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    studentAnswers: [answerSchema],
+    questionSnapshot:   [questionSnapshotSchema],
+    studentAnswers:     [answerSchema],
+    codingSubmissions:  [codingSubmissionSchema],   // NEW — CODING test results
     createdAt: {
       type: Date,
       default: Date.now,
@@ -78,7 +153,12 @@ const testResultSchema = new mongoose.Schema(
   }
 );
 
-testResultSchema.index({ testId: 1, studentId: 1 }, { unique: true });
+// Fast lookup for student's result on a specific test
+testResultSchema.index({ studentId: 1, testId: 1 });
+// Optimized for exam security queries (testId + studentId + status)
+testResultSchema.index({ testId: 1, studentId: 1, status: 1 });
+// High-performance index for analytics
+testResultSchema.index({ testId: 1, status: 1 });
 
 module.exports =
   mongoose.models.TestResult || mongoose.model("TestResult", testResultSchema);

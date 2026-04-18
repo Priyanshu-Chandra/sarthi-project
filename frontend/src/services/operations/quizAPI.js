@@ -10,26 +10,6 @@ const {
 } = quizEndpoints
 
 
-
-// Fetch quiz by course ID (starts an attempt session — for taking a test)
-export const fetchQuizByCourse = async (courseId, token) => {
-  try {
-    const response = await apiConnector(
-      "GET",
-      `${quizEndpoints.GET_QUIZ_BY_COURSE_API}/${courseId}`,
-      null,
-      {
-        Authorization: `Bearer ${token}`
-      }
-    );
-
-    return response.data;
-
-  } catch (error) {
-    console.log("QUIZ FETCH ERROR 1", error);
-  }
-};
-
 // Fetch all tests for a course (listing only — no attempt session)
 export const fetchTestsByCourse = async (courseId, token) => {
   try {
@@ -96,13 +76,16 @@ export const fetchQuizzesBySubject = async (subject, token) => {
 
 
 // Get quiz questions
-export const fetchQuizById = async (quizId, token) => {
+export const fetchQuizById = async ({ quizId, deviceId }, token) => {
 
   try {
+    const query = deviceId
+      ? `?deviceId=${encodeURIComponent(deviceId)}`
+      : "";
 
     const response = await apiConnector(
       "GET",
-      `${GET_QUIZ_BY_ID_API}/${quizId}`,
+      `${GET_QUIZ_BY_ID_API}/${quizId}${query}`,
       null,
       {
         Authorization: `Bearer ${token}`
@@ -126,7 +109,7 @@ export const fetchQuizById = async (quizId, token) => {
 export const submitQuiz = async (data, token) => {
 
   try {
-    const { answers, tabSwitchCount = 0, ...restData } = data
+    const { answers, tabSwitchCount = 0, timeTaken, ...restData } = data
 
     const response = await apiConnector(
       "POST",
@@ -135,6 +118,7 @@ export const submitQuiz = async (data, token) => {
         ...restData,
         answers,
         tabSwitchCount,
+        timeTaken: typeof timeTaken === "number" ? timeTaken : 0,
       },
       {
         Authorization: `Bearer ${token}`

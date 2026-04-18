@@ -296,3 +296,45 @@ body {
   font-style: italic;
 }
 
+.leetcode-activity .react-activity-calendar__scroll-container {
+  padding-bottom: 0.5rem;
+}
+
+.leetcode-activity .react-activity-calendar__scroll-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.leetcode-activity .react-activity-calendar__scroll-container::-webkit-scrollbar-track {
+  background: #111827;
+  border-radius: 999px;
+}
+
+.leetcode-activity .react-activity-calendar__scroll-container::-webkit-scrollbar-thumb {
+  background: #475467;
+  border-radius: 999px;
+}
+
+.leetcode-activity .react-activity-calendar__scroll-container {
+  scrollbar-width: thin;
+  scrollbar-color: #475467 #111827;
+}
+
+.leetcode-activity .react-activity-calendar__legend-month {
+  fill: #e5e7eb;
+  font-weight: 600;
+}
+
+.leetcode-activity .react-activity-calendar__tooltip {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 12px;
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.35);
+  padding: 0.35rem 0.55rem;
+}
+
+.leetcode-activity .react-activity-calendar__tooltip[data-color-scheme='dark'] {
+  background: #0f172a;
+  color: #f8fafc;
+}

@@ -11,6 +11,8 @@ const {
   extractJSON,
   fixQuestions: validateQuestions,
 } = require("../utils/aiHelper");
+const mailSender = require("../utils/mailSender");
+const { newTestNotificationEmail } = require("../mail/templates/newTestNotification");
 
 const DEFAULT_TEST_DURATION_SECONDS = 10 * 60;
 const FINALIZED_TEST_STATUSES = ["COMPLETED", "CHEATED"];
@@ -263,6 +265,46 @@ const createTest = async (req, res) => {
       createdBy: req.user.id,
     });
 
+    // ================ NOTIFICATION FEATURE ================
+    try {
+      // Find all enrolled students and their details
+      const enrolledStudents = await User.find({
+        _id: { $in: course.studentsEnrolled }
+      }).select("email firstName");
+
+      if (enrolledStudents.length > 0) {
+        console.log(`Sending new test notifications to ${enrolledStudents.length} students`);
+        
+        // Get instructor details
+        const instructor = await User.findById(req.user.id);
+
+        // Sequential email sending to avoid rate limits
+        for (const student of enrolledStudents) {
+          try {
+            const emailBody = newTestNotificationEmail(
+              course.courseName,
+              test.title,
+              `${instructor.firstName} ${instructor.lastName}`
+            );
+            await mailSender(
+              student.email,
+              `📝 New Test Available: ${test.title} in ${course.courseName}`,
+              emailBody
+            );
+            // Configurable delay between emails (default 100ms)
+            const delayMs = process.env.MAIL_DELAY_MS ? parseInt(process.env.MAIL_DELAY_MS) : 100;
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          } catch (err) {
+            console.error(`[Notification] Test notification FAILED for ${student.email}:`, err.message);
+          }
+        }
+        console.log("All test notifications processed");
+      }
+    } catch (err) {
+      console.log("Error while sending test notifications:", err);
+      // Don't fail the response if email fails
+    }
+
     return res.status(201).json({
       success: true,
       message: "Test created",
@@ -475,6 +517,7 @@ const getTestById = async (req, res) => {
         attemptSessionToken,
         startTime,
         allowedTimeSeconds: timeLimitSecs,
+        codingSubmissions: existingResult.codingSubmissions || [],
       });
     } else {
       startTime = Date.now();
@@ -702,7 +745,7 @@ const submitTest = async (req, res) => {
       });
     }
 
-    const test = await Test.findById(effectiveTestId);
+    const test = await Test.findById(effectiveTestId).populate("questions.problemId", "title");
 
     if (!test) {
       return res.status(404).json({
@@ -710,6 +753,7 @@ const submitTest = async (req, res) => {
         error: "Test not found",
       });
     }
+
 
     if (
       verifiedAttemptSession?.type !== "test-attempt" ||
@@ -784,6 +828,11 @@ const submitTest = async (req, res) => {
       typeof tabSwitchCount === "number" && tabSwitchCount >= 0
         ? tabSwitchCount
         : 0;
+
+    // Sanity-check: flag as suspicious if tab switches are implausibly high
+    // relative to time spent (more than 1 switch per 30 seconds + buffer is unrealistic)
+    const maxPlausibleTabSwitches = Math.ceil(timeTaken / 30) + 2;
+    const isImplausiblyHigh = normalizedTabSwitchCount > maxPlausibleTabSwitches;
     const cheated = normalizedTabSwitchCount > 3;
 
     if (existingAttempt?.status !== "IN_PROGRESS") {
@@ -793,7 +842,9 @@ const submitTest = async (req, res) => {
       });
     }
 
-    if (!existingAttempt.questionSnapshot?.length) {
+    const isCoding = test.testType === "CODING" || test.type === "CODING";
+
+    if (!isCoding && !existingAttempt.questionSnapshot?.length) {
       return res.status(400).json({
         success: false,
         message: "Attempt questions unavailable",
@@ -807,8 +858,8 @@ const submitTest = async (req, res) => {
       });
     }
 
-    const activeQuestions = existingAttempt.questionSnapshot;
-    const totalQuestions = activeQuestions.length;
+    const activeQuestions = existingAttempt.questionSnapshot || [];
+    let totalQuestions = activeQuestions.length;
 
     if (timeTaken > allowedTimeSeconds) {
       const result = await TestResult.findOneAndUpdate(
@@ -942,13 +993,15 @@ const submitTest = async (req, res) => {
     const details = [];
     let percentage = 0;
 
-    if (test.testType === "CODING") {
+    if (isCoding) {
       let totalRatio = 0;
       const submissions = existingAttempt.codingSubmissions || [];
 
       test.questions.forEach((q) => {
         const sub = submissions.find(
-          (s) => s.problemId.toString() === q.problemId._id.toString(),
+          (s) =>
+            s.problemId.toString() ===
+            (q.problemId._id || q.problemId).toString(),
         );
 
         const problemTitle = q.problemId.title || "Coding Problem";
@@ -1008,7 +1061,7 @@ const submitTest = async (req, res) => {
 
     const passed = percentage >= (test.passingScore || 50); // Default 50% if not set
     const eligibleForCertificate = passed === true;
-    const suspicious = false;
+    const suspicious = isImplausiblyHigh || normalizedTabSwitchCount > 3;
 
 
     const result = await TestResult.findOneAndUpdate(

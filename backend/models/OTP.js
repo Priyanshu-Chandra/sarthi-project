@@ -18,39 +18,7 @@ const OTPSchema = new mongoose.Schema({
 
 });
 
-//  function to send email
-async function sendVerificationEmail(email, otp) {
-    try {
-        const mailResponse = mailSender(email, 'Verification Email from StudyNotion', otp);
-        console.log('Email sent successfully to - ', email);
-
-    }
-    catch (error) {
-        console.log('Error while sending an email to ', email);
-        throw new error;
-    }
-}
-
-// // pre middleware
-// OTPSchema.pre('save', async (next) => {
-//     // console.log("New document saved to database");
-
-//     // Only send an email when a new document is created
-//     if (this.isNew) {
-//         await sendVerificationEmail(this.email, this.otp);
-//     }
-//     next();
-// })
-OTPSchema.pre('save', async function (next) {
-    try {
-        if (this.isNew) {
-            await sendVerificationEmail(this.email, this.otp);
-        }
-        next();
-    } catch (err) {
-        next(err);
-    }
-});
+// Email sending logic handled completely by auth.js controller to prevent duplicate/raw emails.
 
 
 

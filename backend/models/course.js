@@ -55,11 +55,23 @@ const courseSchema = new mongoose.Schema({
         type: String,
         enum: ['Draft', 'Published']
     },
+    courseStatus: {
+        type: String,
+        enum: ['ONGOING', 'COMPLETED'],
+        default: 'ONGOING'
+    },
+    isCertificateEnabled: {
+        type: Boolean,
+        default: false
+    },
     createdAt: {
         type: Date,
     }
     ,
     updatedAt: {
+        type: Date,
+    },
+    lastNotificationSentAt: {
         type: Date,
     }
 

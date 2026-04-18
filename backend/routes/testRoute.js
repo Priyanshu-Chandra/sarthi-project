@@ -9,7 +9,6 @@ const {
   submitTest,
   deleteTest,
   getStudentTestResults,
-  getTestByCourse,
   getTestsByCourse,
   generateAITest,
 } = require("../controllers/testController.js");
@@ -18,7 +17,6 @@ const router = express.Router();
 
 router.post("/create", auth, isInstructor, createTest);
 router.get("/course/:courseId/list", auth, getTestsByCourse);
-router.get("/course/:courseId", auth, isStudent, getTestByCourse);
 router.get("/subjects", auth, getTestSubjects);
 router.get("/by-subject/:subject", auth, isStudent, getTestsBySubject);
 router.post("/submit", auth, isStudent, submitTest);

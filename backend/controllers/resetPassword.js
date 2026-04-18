@@ -3,6 +3,8 @@ const mailSender = require('../utils/mailSender');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 
+const { resetPasswordEmail } = require('../mail/templates/resetPasswordEmail');
+
 // ================ resetPasswordToken ================
 exports.resetPasswordToken = async (req, res) => {
     try {
@@ -30,10 +32,23 @@ exports.resetPasswordToken = async (req, res) => {
 
 
         // create url
-        const url = `https://study-notion-mern-stack.netlify.app/update-password/${token}`;
+        const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+        const url = `${frontendUrl}/update-password/${token}`;
 
         // send email containing url
-        await mailSender(email, 'Password Reset Link', `Password Reset Link : ${url}`);
+        try {
+            await mailSender(
+                email, 
+                'Password Reset Link from Sarthi', 
+                resetPasswordEmail(email, url, updatedUser.firstName)
+            );
+        } catch (mailError) {
+            console.error(`Failed to send password reset email to ${email}:`, mailError);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to send password reset email. Please try again.'
+            });
+        }
 
         // return succes response
         res.status(200).json({
@@ -84,6 +99,13 @@ exports.resetPassword = async (req, res) => {
         // find user by token from DB
         const userDetails = await User.findOne({ token: token });
 
+        if (!userDetails) {
+            return res.status(401).json({
+                success: false,
+                message: 'Password Reset token is invalid or user not found'
+            });
+        }
+
         // check ==> is this needed or not ==> for security  
         if (token !== userDetails.token) {
             return res.status(401).json({
@@ -109,7 +131,10 @@ exports.resetPassword = async (req, res) => {
         // update user with New Password
         await User.findOneAndUpdate(
             { token },
-            { password: hashedPassword },
+            { 
+                password: hashedPassword,
+                $unset: { token: 1, resetPasswordTokenExpires: 1 }
+            },
             { new: true });
 
         res.status(200).json({
@@ -119,12 +144,12 @@ exports.resetPassword = async (req, res) => {
     }
 
     catch (error) {
-        console.log('Error while reseting password');
+        console.log('Error while resetting password');
         console.log(error);
         res.status(500).json({
             success: false,
             error: error.message,
-            message: 'Error while reseting password12'
+            message: 'Error while resetting password'
         });
     }
 }

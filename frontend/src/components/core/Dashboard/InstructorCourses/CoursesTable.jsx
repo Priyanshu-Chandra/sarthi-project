@@ -5,14 +5,19 @@ import { Table, Thead, Tbody, Tr, Th, Td } from 'react-super-responsive-table'
 import 'react-super-responsive-table/dist/SuperResponsiveTableStyle.css'
 
 import { useState } from "react"
-import { FaCheck } from "react-icons/fa"
+import { FaCheck, FaAward } from "react-icons/fa"
 import { FiEdit2 } from "react-icons/fi"
-import { HiClock } from "react-icons/hi"
-import { RiDeleteBin6Line } from "react-icons/ri"
+import { HiClock, HiAcademicCap } from "react-icons/hi"
+import { RiDeleteBin6Line, RiCheckboxCircleFill } from "react-icons/ri"
 import { useNavigate } from "react-router-dom"
 
 import { formatDate } from "../../../../services/formatDate"
-import { deleteCourse, fetchInstructorCourses, } from "../../../../services/operations/courseDetailsAPI"
+import { 
+  deleteCourse, 
+  fetchInstructorCourses, 
+  markCourseAsCompleted, 
+  enableCertificateForCourse 
+} from "../../../../services/operations/courseDetailsAPI"
 import { COURSE_STATUS } from "../../../../utils/constants"
 import ConfirmationModal from "../../../common/ConfirmationModal"
 import Img from './../../../common/Img';
@@ -29,6 +34,26 @@ export default function CoursesTable({ courses, setCourses, loading, setLoading 
 
   const [confirmationModal, setConfirmationModal] = useState(null)
   const TRUNCATE_LENGTH = 25
+
+  const handleMarkAsCompleted = async (courseId) => {
+    setLoading(true)
+    const result = await markCourseAsCompleted(courseId, token)
+    if (result) {
+      const updatedCourses = await fetchInstructorCourses(token)
+      if (updatedCourses) setCourses(updatedCourses)
+    }
+    setLoading(false)
+  }
+
+  const handleEnableCertificate = async (courseId) => {
+    setLoading(true)
+    const result = await enableCertificateForCourse(courseId, token)
+    if (result) {
+      const updatedCourses = await fetchInstructorCourses(token)
+      if (updatedCourses) setCourses(updatedCourses)
+    }
+    setLoading(false)
+  }
 
   // delete course
   const handleCourseDelete = async (courseId) => {
@@ -139,24 +164,40 @@ export default function CoursesTable({ courses, setCourses, loading, setLoading 
                       </p>
 
                       {/* course status */}
-                      {course.status === COURSE_STATUS.DRAFT ? (
-                        <p className="mt-2 flex w-fit flex-row items-center gap-2 rounded-full bg-richblack-700 px-2 py-[2px] text-[12px] font-medium text-pink-100">
-                          <HiClock size={14} />
-                          Drafted
-                        </p>)
-                        :
-                        (<div className="mt-2 flex w-fit flex-row items-center gap-2 rounded-full bg-richblack-700 px-2 py-[2px] text-[12px] font-medium text-yellow-100">
-                          <p className="flex h-3 w-3 items-center justify-center rounded-full bg-yellow-100 text-richblack-700">
-                            <FaCheck size={8} />
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {course.status === COURSE_STATUS.DRAFT ? (
+                          <p className="flex w-fit items-center gap-2 rounded-full bg-richblack-700 px-2 py-[2px] text-[12px] font-medium text-pink-100">
+                            <HiClock size={14} />
+                            Drafted
                           </p>
-                          Published
-                        </div>
+                        ) : (
+                          <div className="flex w-fit items-center gap-2 rounded-full bg-richblack-700 px-2 py-[2px] text-[12px] font-medium text-yellow-100">
+                            <p className="flex h-3 w-3 items-center justify-center rounded-full bg-yellow-100 text-richblack-700">
+                              <FaCheck size={8} />
+                            </p>
+                            Published
+                          </div>
                         )}
+
+                        {course.courseStatus === "COMPLETED" && (
+                          <div className="flex w-fit items-center gap-2 rounded-full bg-caribbeangreen-900 px-2 py-[2px] text-[12px] font-medium text-caribbeangreen-100">
+                            <RiCheckboxCircleFill size={14} />
+                            Completed
+                          </div>
+                        )}
+
+                        {course.isCertificateEnabled && (
+                          <div className="flex w-fit items-center gap-2 rounded-full bg-blue-900 px-2 py-[2px] text-[12px] font-medium text-blue-100 border border-blue-500">
+                            <FaAward size={12} title="Certificates Active" />
+                            Certificates Active
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </Td>
 
                   {/* course duration */}
-                  <Td className="text-sm font-medium text-richblack-100">2hr 30min</Td>
+                  <Td className="text-sm font-medium text-richblack-100">{course?.totalDuration || "0s"}</Td>
                   <Td className="text-sm font-medium text-richblack-100">₹{course.price}</Td>
 
                   <Td className="text-sm font-medium text-richblack-100 ">
@@ -169,6 +210,30 @@ export default function CoursesTable({ courses, setCourses, loading, setLoading 
                     >
                       <FiEdit2 size={20} />
                     </button>
+
+                    {/* Mark Completed Button (Visible if Published but not Completed) */}
+                    {course.status === COURSE_STATUS.PUBLISHED && course.courseStatus !== "COMPLETED" && (
+                      <button
+                        disabled={loading}
+                        onClick={() => handleMarkAsCompleted(course._id)}
+                        title="Mark Course as Completed"
+                        className="px-2 transition-all duration-200 hover:scale-110 text-richblack-100 hover:text-caribbeangreen-100"
+                      >
+                        <RiCheckboxCircleFill size={22} />
+                      </button>
+                    )}
+
+                    {/* Enable Certificate Button (Visible if Completed but not Certfied) */}
+                    {course.courseStatus === "COMPLETED" && !course.isCertificateEnabled && (
+                      <button
+                        disabled={loading}
+                        onClick={() => handleEnableCertificate(course._id)}
+                        title="Enable Certificates for Students"
+                        className="px-2 transition-all duration-200 hover:scale-110 text-richblack-100 hover:text-blue-200"
+                      >
+                        <FaAward size={22} />
+                      </button>
+                    )}
 
                     {/* Delete button */}
                     <button
