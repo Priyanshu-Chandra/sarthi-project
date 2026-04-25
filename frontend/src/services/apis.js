@@ -50,6 +50,10 @@ export const courseEndpoints = {
   CREATE_RATING_API: BASE_URL + "/api/v1/course/createRating",
   CREATE_NEW_CATEGORY: BASE_URL + "/api/v1/course/createCategory",
   DELETE_CATEGORY: BASE_URL + "/api/v1/course/deleteCategory",
+  VERIFY_CERTIFICATE_API: BASE_URL + "/api/v1/course/verify-certificate",
+  MARK_COURSE_COMPLETED_API: BASE_URL + "/api/v1/course/markCourseAsCompleted",
+  ENABLE_CERTIFICATE_API: BASE_URL + "/api/v1/course/enableCertificate",
+  DOWNLOAD_CERTIFICATE_API: BASE_URL + "/api/v1/course/downloadCertificate",
 }
 
 // RATINGS AND REVIEWS
@@ -85,11 +89,53 @@ export const quizEndpoints = {
   CREATE_QUIZ_API: BASE_URL + "/api/v1/test/create",
   GENERATE_AI_API: BASE_URL + "/api/v1/test/generate-ai",
   GET_SUBJECTS_API: BASE_URL + "/api/v1/test/subjects",
-  GET_QUIZ_BY_COURSE_API: BASE_URL + "/api/v1/test/course",
   GET_TESTS_BY_COURSE_API: BASE_URL + "/api/v1/test/course",
   GET_QUIZZES_BY_SUBJECT_API: BASE_URL + "/api/v1/test/by-subject",
   GET_QUIZ_BY_ID_API: BASE_URL + "/api/v1/test",
   SUBMIT_QUIZ_API: BASE_URL + "/api/v1/test/submit",
   GET_RESULTS_API: BASE_URL + "/api/v1/test/results",
   DELETE_TEST_API: BASE_URL + "/api/v1/test",
+}
+
+// CODING ENDPOINTS
+export const codingEndpoints = {
+  EXECUTE_CODE_API: BASE_URL + "/api/v1/code/run",
+  SUBMIT_CODE_API: BASE_URL + "/api/v1/code/submit",
+  GET_USER_SUBMISSIONS_API: BASE_URL + "/api/v1/code/history",
+  GET_CODING_STATS_API: BASE_URL + "/api/v1/code/stats",
+  GET_LEADERBOARD_API: BASE_URL + "/api/v1/code/leaderboard",
+  GET_ACTIVITY_API: BASE_URL + "/api/v1/code/activity",
+  GET_ANALYTICS_API: BASE_URL + "/api/v1/code/analytics",
+  AI_HELP_API: BASE_URL + "/api/v1/ai/code-help",
+}
+
+// PROBLEM ENDPOINTS
+export const problemEndpoints = {
+  GET_ALL_PROBLEMS_API: BASE_URL + "/api/v1/problems/all",
+  GET_PROBLEM_DETAILS_API: BASE_URL + "/api/v1/problems", // append /:id
+}
+
+// LIVE ANALYTICS ENDPOINTS
+export const liveAnalyticsEndpoints = {
+  GET_SESSION_SUMMARY_API: BASE_URL + "/api/v1/live-analytics/session", // append /:sessionId/summary
+  GET_COURSE_SESSION_HISTORY_API: BASE_URL + "/api/v1/live-analytics/course", // append /:courseId/history
+  GET_SESSION_STUDENTS_API: BASE_URL + "/api/v1/live-analytics/session", // append /:sessionId/students
+}
+
+// INSTRUCTOR DASHBOARD ANALYTICS
+export const instructorAnalyticsEndpoints = {
+  GET_EXAM_OVERVIEW_API: BASE_URL + "/api/v1/instructor-analytics/overview",
+  GET_FAILED_QUESTIONS_API: BASE_URL + "/api/v1/instructor-analytics/failed",
+  GET_TOP_PERFORMERS_API: BASE_URL + "/api/v1/instructor-analytics/top-performers",
+}
+
+// CHEATING ANALYTICS
+export const cheatingAnalyticsEndpoints = {
+  GET_CHEATING_ANALYSIS_API: BASE_URL + "/api/v1/cheating-analytics",
+  GET_CHEATING_SUMMARY_API: BASE_URL + "/api/v1/cheating-analytics/summary",
+}
+
+// LIVE CLASS ENDPOINTS
+export const liveClassEndpoints = {
+  START_LIVE_CLASS_API: BASE_URL + "/api/v1/live-class/start",
 }

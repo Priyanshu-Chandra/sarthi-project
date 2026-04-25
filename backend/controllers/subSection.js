@@ -1,6 +1,7 @@
 const Section = require('../models/section');
 const SubSection = require('../models/subSection');
-const { uploadImageToCloudinary } = require('../utils/imageUploader');
+const Course = require('../models/course');
+const { uploadImageToCloudinary, deleteResourceFromCloudinary } = require('../utils/imageUploader');
 
 
 
@@ -8,14 +9,14 @@ const { uploadImageToCloudinary } = require('../utils/imageUploader');
 exports.createSubSection = async (req, res) => {
     try {
         // extract data
-        const { title, description, sectionId } = req.body;
+        const { title, description, sectionId, courseId } = req.body;
 
         // extract video file
-        const videoFile = req.files.video
-        // console.log('videoFile ', videoFile)
+        const videoFile = req.files.video || req.files.videoFile;
 
         // validation
-        if (!title || !description || !videoFile || !sectionId) {
+        if (!title || !description || !videoFile || !sectionId || !courseId) {
+            console.log("Create SubSection Validation Failure:", { title, description, sectionId, courseId, hasVideo: !!videoFile });
             return res.status(400).json({
                 success: false,
                 message: 'All fields are required'
@@ -23,30 +24,50 @@ exports.createSubSection = async (req, res) => {
         }
 
         // upload video to cloudinary
+        console.log(`[Cloudinary] Uploading lecture video for: ${title}`);
         const videoFileDetails = await uploadImageToCloudinary(videoFile, process.env.FOLDER_NAME);
+        console.log(`[Cloudinary] Video Upload Success: ${videoFileDetails.secure_url}`);
 
         // create entry in DB
-        const SubSectionDetails = await SubSection.create(
-            { title, timeDuration: videoFileDetails.duration, description, videoUrl: videoFileDetails.secure_url })
+        const SubSectionDetails = await SubSection.create({
+            title,
+            timeDuration: videoFileDetails.duration,
+            description,
+            videoUrl: videoFileDetails.secure_url
+        })
 
         // link subsection id to section
-        // Update the corresponding section with the newly created sub-section
-        const updatedSection = await Section.findByIdAndUpdate(
+        await Section.findByIdAndUpdate(
             { _id: sectionId },
             { $push: { subSection: SubSectionDetails._id } },
             { new: true }
-        ).populate("subSection")
+        )
+
+        // Return the full course details to keep frontend in perfect sync
+        const updatedCourse = await Course.findById(courseId)
+            .populate({
+                path: "instructor",
+                populate: { path: "additionalDetails" },
+            })
+            .populate("category")
+            .populate("ratingAndReviews")
+            .populate({
+                path: "courseContent",
+                populate: { path: "subSection" },
+            })
+            .exec()
+
+        console.log(`[Database] SubSection created and Course fully refreshed: ${courseId}`);
 
         // return response
         res.status(200).json({
             success: true,
-            data: updatedSection,
+            data: updatedCourse,
             message: 'SubSection created successfully'
         });
     }
     catch (error) {
-        console.log('Error while creating SubSection');
-        console.log(error);
+        console.error('Error while creating SubSection:', error);
         res.status(500).json({
             success: false,
             error: error.message,
@@ -60,13 +81,13 @@ exports.createSubSection = async (req, res) => {
 // ================ Update SubSection ================
 exports.updateSubSection = async (req, res) => {
     try {
-        const { sectionId, subSectionId, title, description } = req.body;
+        const { sectionId, subSectionId, title, description, courseId } = req.body;
 
         // validation
-        if (!subSectionId) {
+        if (!subSectionId || !sectionId || !courseId) {
             return res.status(400).json({
                 success: false,
-                message: 'subSection ID is required to update'
+                message: 'Section, SubSection, and Course IDs are required'
             });
         }
 
@@ -80,37 +101,47 @@ exports.updateSubSection = async (req, res) => {
             })
         }
 
-        // add data
-        if (title) {
-            subSection.title = title;
-        }
+        // update data
+        if (title) subSection.title = title;
+        if (description) subSection.description = description;
 
-        if (description) {
-            subSection.description = description;
-        }
-
-        // upload video to cloudinary
-        if (req.files && req.files.videoFile !== undefined) {
-            const video = req.files.videoFile;
+        // upload video to cloudinary if new one provided
+        if (req.files && (req.files.video || req.files.videoFile)) {
+            const video = req.files.video || req.files.videoFile;
+            console.log(`[Cloudinary] Updating video for: ${subSectionId}`);
             const uploadDetails = await uploadImageToCloudinary(video, process.env.FOLDER_NAME);
             subSection.videoUrl = uploadDetails.secure_url;
             subSection.timeDuration = uploadDetails.duration;
+            console.log(`[Cloudinary] New Video URL: ${subSection.videoUrl}`);
         }
 
         // save data to DB
         await subSection.save();
 
-        const updatedSection = await Section.findById(sectionId).populate("subSection")
+        // Return the full course details to keep frontend in perfect sync
+        const updatedCourse = await Course.findById(courseId)
+            .populate({
+                path: "instructor",
+                populate: { path: "additionalDetails" },
+            })
+            .populate("category")
+            .populate("ratingAndReviews")
+            .populate({
+                path: "courseContent",
+                populate: { path: "subSection" },
+            })
+            .exec()
 
-        return res.json({
+        console.log(`[Database] SubSection updated and Course fully refreshed: ${courseId}`);
+
+        return res.status(200).json({
             success: true,
-            data: updatedSection,
+            data: updatedCourse,
             message: "Section updated successfully",
         });
     }
     catch (error) {
-        console.error('Error while updating the section')
-        console.error(error)
+        console.error('Error while updating the section:', error)
         return res.status(500).json({
             success: false,
             error: error.message,
@@ -141,6 +172,15 @@ exports.deleteSubSection = async (req, res) => {
             return res
                 .status(404)
                 .json({ success: false, message: "SubSection not found" })
+        }
+
+        // delete from cloudinary
+        if (subSection.videoUrl) {
+            try {
+                await deleteResourceFromCloudinary(subSection.videoUrl);
+            } catch (err) {
+                console.log("Error while deleting video from cloudinary:", err);
+            }
         }
 
         const updatedSection = await Section.findById(sectionId).populate('subSection')

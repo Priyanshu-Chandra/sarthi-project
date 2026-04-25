@@ -110,9 +110,8 @@ export function login(email, password, navigate) {
 
       dispatch(setUser({ ...response.data.user, image: userImage }));
       // console.log('User data - ', response.data.user);/
-      localStorage.setItem("token", JSON.stringify(response.data?.token));
-
-      localStorage.setItem("user", JSON.stringify({ ...response.data.user, image: userImage }));
+      sessionStorage.setItem("token", JSON.stringify(response.data?.token));
+      sessionStorage.setItem("user", JSON.stringify({ ...response.data.user, image: userImage }));
 
       navigate("/dashboard/my-profile");
     } catch (error) {
@@ -193,8 +192,8 @@ export function logout(navigate) {
     dispatch(setToken(null))
     dispatch(setUser(null))
     dispatch(resetCart())
-    localStorage.removeItem("token")
-    localStorage.removeItem("user")
+    sessionStorage.removeItem("token")
+    sessionStorage.removeItem("user")
     toast.success("Logged Out")
     navigate("/")
   }

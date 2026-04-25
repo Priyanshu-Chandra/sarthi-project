@@ -20,7 +20,7 @@ function Course_Slider({ Courses }) {
         <Swiper
           slidesPerView={1}
           spaceBetween={25}
-          loop={true}
+          loop={Courses?.length > 3}
           // modules={[ Pagination]}
 
           breakpoints={{

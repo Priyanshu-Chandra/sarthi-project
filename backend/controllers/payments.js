@@ -5,6 +5,7 @@ const mailSender = require("../utils/mailSender");
 const {
   courseEnrollmentEmail,
 } = require("../mail/templates/courseEnrollmentEmail");
+const { paymentSuccessEmail } = require("../mail/templates/paymentSuccessEmail");
 require("dotenv").config();
 
 const User = require("../models/user");
@@ -203,11 +204,12 @@ exports.sendPaymentSuccessEmail = async (req, res) => {
         paymentId,
       ),
     );
+    
+    return res.status(200).json({ success: true, message: "Email sent successfully" });
   } catch (error) {
     console.log("error in sending mail", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Could not send email" });
+    // Don't fail the payment success flow for the user if the confirmation email fails
+    return res.status(200).json({ success: true, message: "Payment successful, but could not send confirmation email" });
   }
 };
 

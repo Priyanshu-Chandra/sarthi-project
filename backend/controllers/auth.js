@@ -60,10 +60,10 @@ exports.sendOTP = async (req, res) => {
 
     catch (error) {
         console.log('Error while generating Otp - ', error);
-        res.status(200).json({
+        res.status(500).json({
             success: false,
             message: 'Error while generating Otp',
-            error: error.mesage
+            error: error.message
         });
     }
 }
@@ -88,7 +88,7 @@ exports.signup = async (req, res) => {
         if (password !== confirmPassword) {
             return res.status(400).json({
                 success: false,
-                messgae: 'passowrd & confirm password does not match, Please try again..!'
+                message: 'password & confirm password does not match, Please try again..!'
             });
         }
 
@@ -129,7 +129,7 @@ exports.signup = async (req, res) => {
             })
         }
 
-        // hash - secure passoword
+        // hash - secure password
         let hashedPassword = await bcrypt.hash(password, 10);
 
         // additionDetails
@@ -137,8 +137,7 @@ exports.signup = async (req, res) => {
             gender: null, dateOfBirth: null, about: null, contactNumber: null
         });
 
-        let approved = "";
-        approved === "Instructor" ? (approved = false) : (approved = true);
+        const approved = accountType === "Instructor" ? false : true;
 
         // create entry in DB
         const userData = await User.create({
@@ -161,7 +160,7 @@ exports.signup = async (req, res) => {
         res.status(401).json({
             success: false,
             error: error.message,
-            messgae: 'User cannot be registered , Please try again..!'
+            message: 'User cannot be registered , Please try again..!'
         })
     }
 }
@@ -237,7 +236,7 @@ exports.login = async (req, res) => {
         res.status(500).json({
             success: false,
             error: error.message,
-            messgae: 'Error while Login user'
+            message: 'Error while Login user'
         })
     }
 }
@@ -253,7 +252,7 @@ exports.changePassword = async (req, res) => {
         if (!oldPassword || !newPassword || !confirmNewPassword) {
             return res.status(403).json({
                 success: false,
-                message: 'All fileds are required'
+                message: 'All fields are required'
             });
         }
 
@@ -291,42 +290,35 @@ exports.changePassword = async (req, res) => {
             { new: true });
 
 
-        // send email
+        // send email (Non-fatal, log but return success)
         try {
-            const emailResponse = await mailSender(
+            await mailSender(
                 updatedUserDetails.email,
                 'Password for your account has been updated',
                 passwordUpdated(
                     updatedUserDetails.email,
-                    `Password updated successfully for ${updatedUserDetails.firstName} ${updatedUserDetails.lastName}`
+                    updatedUserDetails.firstName
                 )
             );
-            // console.log("Email sent successfully:", emailResponse);
         }
         catch (error) {
-            console.error("Error occurred while sending email:", error);
-            return res.status(500).json({
-                success: false,
-                message: "Error occurred while sending email",
-                error: error.message,
-            });
+            console.error("Non-fatal: Error occurred while sending password update email:", error.message);
         }
-
 
         // return success response
         res.status(200).json({
             success: true,
-            mesage: 'Password changed successfully'
+            message: 'Password changed successfully'
         });
     }
 
     catch (error) {
-        console.log('Error while changing passowrd');
+        console.log('Error while changing password');
         console.log(error)
         res.status(500).json({
             success: false,
             error: error.message,
-            messgae: 'Error while changing passowrd'
+            message: 'Error while changing password'
         })
     }
 }

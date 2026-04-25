@@ -23,7 +23,9 @@ const {
   CREATE_RATING_API,
   LECTURE_COMPLETION_API,
   CREATE_NEW_CATEGORY,
-  DELETE_CATEGORY
+  DELETE_CATEGORY,
+  MARK_COURSE_COMPLETED_API,
+  ENABLE_CERTIFICATE_API,
 } = courseEndpoints
 
 
@@ -136,7 +138,7 @@ export const fetchCourseCategories = async () => {
 
 
 // ================ add Course Details ================
-export const addCourseDetails = async (data, token) => {
+export const addCourseDetails = async (data, token, setProgress) => {
   const toastId = toast.loading("Loading...")
   let result = null;
 
@@ -144,6 +146,13 @@ export const addCourseDetails = async (data, token) => {
     const response = await apiConnector("POST", CREATE_COURSE_API, data, {
       "Content-Type": "multipart/form-data",
       Authorization: `Bearer ${token}`,
+    }, null, {
+      onUploadProgress: (progressEvent) => {
+        if (setProgress) {
+          const percentage = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setProgress(percentage);
+        }
+      }
     })
     console.log("CREATE COURSE API RESPONSE............", response)
 
@@ -216,13 +225,21 @@ export const createSection = async (data, token) => {
 
 
 // ================ create SubSection ================
-export const createSubSection = async (data, token) => {
+export const createSubSection = async (data, token, setProgress) => {
   let result = null
   const toastId = toast.loading("Loading...")
 
   try {
     const response = await apiConnector("POST", CREATE_SUBSECTION_API, data, {
       Authorization: `Bearer ${token}`,
+    }, null, {
+      onUploadProgress: (progressEvent) => {
+        if (setProgress) {
+          const percentage = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setProgress(percentage);
+        }
+      },
+      timeout: 0, // No timeout for large video uploads
     })
     console.log("CREATE SUB-SECTION API RESPONSE............", response)
 
@@ -268,13 +285,21 @@ export const updateSection = async (data, token) => {
 
 
 // ================ Update SubSection ================
-export const updateSubSection = async (data, token) => {
+export const updateSubSection = async (data, token, setProgress) => {
   let result = null
   const toastId = toast.loading("Loading...")
 
   try {
     const response = await apiConnector("POST", UPDATE_SUBSECTION_API, data, {
       Authorization: `Bearer ${token}`,
+    }, null, {
+      onUploadProgress: (progressEvent) => {
+        if (setProgress) {
+          const percentage = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setProgress(percentage);
+        }
+      },
+      timeout: 0, // No timeout for large video uploads
     })
     console.log("UPDATE SUB-SECTION API RESPONSE............", response)
 
@@ -467,4 +492,48 @@ export const createRating = async (data, token) => {
   }
   toast.dismiss(toastId)
   return success
+}
+
+// ================ mark Course As Completed ================
+export const markCourseAsCompleted = async (courseId, token) => {
+  let result = null
+  const toastId = toast.loading("Marking course as complete...")
+  try {
+    const response = await apiConnector("PATCH", `${MARK_COURSE_COMPLETED_API}/${courseId}`, null, {
+      Authorization: `Bearer ${token}`,
+    })
+    console.log("MARK_COURSE_AS_COMPLETED_API RESPONSE............", response)
+    if (!response?.data?.success) {
+      throw new Error(response.data.message)
+    }
+    toast.success("Course Marked as Completed")
+    result = response.data.data
+  } catch (error) {
+    console.log("MARK_COURSE_AS_COMPLETED_API ERROR............", error)
+    toast.error(error.message)
+  }
+  toast.dismiss(toastId)
+  return result
+}
+
+// ================ enable Certificate For Course ================
+export const enableCertificateForCourse = async (courseId, token) => {
+  let result = null
+  const toastId = toast.loading("Enabling certificates...")
+  try {
+    const response = await apiConnector("PATCH", `${ENABLE_CERTIFICATE_API}/${courseId}`, null, {
+      Authorization: `Bearer ${token}`,
+    })
+    console.log("ENABLE_CERTIFICATE_API RESPONSE............", response)
+    if (!response?.data?.success) {
+      throw new Error(response.data.message)
+    }
+    toast.success("Certificates Enabled for this Course")
+    result = response.data.data
+  } catch (error) {
+    console.log("ENABLE_CERTIFICATE_API ERROR............", error)
+    toast.error(error.message)
+  }
+  toast.dismiss(toastId)
+  return result
 }

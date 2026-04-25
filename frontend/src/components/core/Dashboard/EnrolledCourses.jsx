@@ -140,12 +140,32 @@ export default function EnrolledCourses() {
                 {/* duration -  progress */}
                 <div className="hidden w-1/5 sm:flex px-2 py-3">{course?.totalDuration}</div>
                 <div className="hidden sm:flex w-1/5 flex-col gap-2 px-2 py-3">
-                  <p>Progress: {course.progressPercentage || 0}%</p>
-                  <ProgressBar
-                    completed={course.progressPercentage || 0}
-                    height="8px"
-                    isLabelVisible={false}
-                  />
+                  {course.isLive ? (
+                    <div className="flex flex-col gap-2">
+                       <div className="flex items-center gap-2">
+                        <span className="flex h-2 w-2 rounded-full bg-pink-500 animate-pulse"></span>
+                        <span className="text-xs font-bold text-pink-100 uppercase tracking-wider">Live Now</span>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/live-class/${course.liveRoomId}`);
+                        }}
+                        className="bg-pink-500 text-white text-[10px] px-3 py-1.5 rounded-full font-bold hover:bg-pink-600 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-pink-500/20"
+                      >
+                        Join Session
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <p>Progress: {course.progressPercentage || 0}%</p>
+                      <ProgressBar
+                        completed={course.progressPercentage || 0}
+                        height="8px"
+                        isLabelVisible={false}
+                      />
+                    </>
+                  )}
                 </div>
               </div>
             ))

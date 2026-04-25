@@ -29,6 +29,7 @@ export default function SubSectionModal({ modalData, setModalData, add = false, 
 
   const dispatch = useDispatch()
   const [loading, setLoading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const { token } = useSelector((state) => state.auth)
   const { course } = useSelector((state) => state.course)
 
@@ -39,7 +40,7 @@ export default function SubSectionModal({ modalData, setModalData, add = false, 
       setValue("lectureDesc", modalData.description)
       setValue("lectureVideo", modalData.videoUrl)
     }
-  }, [])
+  }, [modalData, view, edit, setValue])
 
   // detect whether form is updated or not
   const isFormUpdated = () => {
@@ -63,6 +64,8 @@ export default function SubSectionModal({ modalData, setModalData, add = false, 
     // console.log("Values After Editing form values:", currentValues)
     formData.append("sectionId", modalData.sectionId)
     formData.append("subSectionId", modalData._id)
+    formData.append("courseId", course._id)
+
     if (currentValues.lectureTitle !== modalData.title) {
       formData.append("title", currentValues.lectureTitle)
     }
@@ -73,15 +76,10 @@ export default function SubSectionModal({ modalData, setModalData, add = false, 
       formData.append("video", currentValues.lectureVideo)
     }
     setLoading(true)
-    const result = await updateSubSection(formData, token)
+    setUploadProgress(0)
+    const result = await updateSubSection(formData, token, setUploadProgress)
     if (result) {
-      // console.log("result", result)
-      // update the structure of course
-      const updatedCourseContent = course.courseContent.map((section) =>
-        section._id === modalData.sectionId ? result : section
-      )
-      const updatedCourse = { ...course, courseContent: updatedCourseContent }
-      dispatch(setCourse(updatedCourse))
+      dispatch(setCourse(result))
     }
     setModalData(null)
     setLoading(false)
@@ -105,15 +103,13 @@ export default function SubSectionModal({ modalData, setModalData, add = false, 
     formData.append("title", data.lectureTitle)
     formData.append("description", data.lectureDesc)
     formData.append("video", data.lectureVideo)
+    formData.append("courseId", course._id)
+    
     setLoading(true)
-    const result = await createSubSection(formData, token)
+    setUploadProgress(0)
+    const result = await createSubSection(formData, token, setUploadProgress)
     if (result) {
-      // update the structure of course
-      const updatedCourseContent = course.courseContent.map((section) =>
-        section._id === modalData ? result : section
-      )
-      const updatedCourse = { ...course, courseContent: updatedCourseContent }
-      dispatch(setCourse(updatedCourse))
+      dispatch(setCourse(result))
     }
     setModalData(null)
     setLoading(false)
@@ -146,6 +142,7 @@ export default function SubSectionModal({ modalData, setModalData, add = false, 
             video={true}
             viewData={view ? modalData.videoUrl : null}
             editData={edit ? modalData.videoUrl : null}
+            uploadProgress={uploadProgress}
           />
           {/* Lecture Title */}
           <div className="flex flex-col space-y-2">

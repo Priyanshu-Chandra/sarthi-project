@@ -22,6 +22,7 @@ export default function CourseInformationForm() {
   const { course, editCourse } = useSelector((state) => state.course)
   const [loading, setLoading] = useState(false)
   const [courseCategories, setCourseCategories] = useState([])
+  const [uploadProgress, setUploadProgress] = useState(0)
 
   useEffect(() => {
     const getCategories = async () => {
@@ -135,7 +136,8 @@ export default function CourseInformationForm() {
     formData.append("instructions", JSON.stringify(data.courseRequirements))
     formData.append("thumbnailImage", data.courseImage)
     setLoading(true)
-    const result = await addCourseDetails(formData, token)
+    setUploadProgress(0)
+    const result = await addCourseDetails(formData, token, setUploadProgress)
     if (result) {
       dispatch(setStep(2))
       dispatch(setCourse(result))
@@ -258,6 +260,7 @@ export default function CourseInformationForm() {
         setValue={setValue}
         errors={errors}
         editData={editCourse ? course?.thumbnail : null}
+        uploadProgress={uploadProgress}
       />
 
       {/* Benefits of the course */}

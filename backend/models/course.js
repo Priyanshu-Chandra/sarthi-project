@@ -55,14 +55,51 @@ const courseSchema = new mongoose.Schema({
         type: String,
         enum: ['Draft', 'Published']
     },
+    courseStatus: {
+        type: String,
+        enum: ['ONGOING', 'COMPLETED'],
+        default: 'ONGOING'
+    },
+    isCertificateEnabled: {
+        type: Boolean,
+        default: false
+    },
+    isLive: {
+        type: Boolean,
+        default: false
+    },
+    liveRoomId: {
+        type: String,
+        default: null
+    },
     createdAt: {
         type: Date,
     }
     ,
     updatedAt: {
         type: Date,
+    },
+    lastNotificationSentAt: {
+        type: Date,
+    },
+    lastHeartbeatAt: {
+        type: Date,
+        default: null
+    },
+    liveStartedAt: {
+        type: Date,
+        default: null
+    },
+    lastLiveClassStartedAt: {
+        type: Date,
+        default: null
     }
 
 });
+
+courseSchema.index(
+    { instructor: 1, isLive: 1 },
+    { unique: true, partialFilterExpression: { isLive: true } }
+);
 
 module.exports = mongoose.model('Course', courseSchema);

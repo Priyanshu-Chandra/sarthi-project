@@ -10,6 +10,7 @@ import { IoIosArrowBack } from "react-icons/io"
 
 import { IoMdClose } from 'react-icons/io'
 import { HiMenuAlt1 } from 'react-icons/hi'
+import { FiAward, FiShield, FiUnlock } from "react-icons/fi"
 
 import { fetchTestsByCourse } from "../../../services/operations/quizAPI"
 
@@ -76,6 +77,19 @@ export default function VideoDetailsSidebar({ setReviewModal }) {
     return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
   };
 
+  const hasCertificateEligibility = Boolean(courseEntireData?._id && courseEntireData?.certificateEligibility)
+  const certificateEligibility = courseEntireData?.certificateEligibility || {
+    eligible: false,
+    reason: "NOT_ALL_TESTS_PASSED",
+  }
+  const certificateLocked = !hasCertificateEligibility || certificateEligibility.eligible !== true
+  const certificateMessage =
+    !hasCertificateEligibility
+      ? "Checking certificate status..."
+      : certificateEligibility.reason === "CHEATING_DETECTED"
+      ? "Certificate permanently blocked: Security violations detected during assessment."
+      : "Complete all tests to unlock certificate"
+
 
   return (
     <>
@@ -113,6 +127,62 @@ export default function VideoDetailsSidebar({ setReviewModal }) {
             <p className="text-sm font-semibold text-richblack-500">
               {completedLectures?.length} / {totalNoOfLectures}
             </p>
+          </div>
+        </div>
+
+        <div className="mx-5 mb-4 rounded-2xl border border-richblack-600 bg-gradient-to-br from-richblack-700 via-richblack-800 to-richblack-900 p-4 shadow-lg">
+          <div className="flex items-start gap-3">
+            <div
+              className={`mt-1 flex h-10 w-10 items-center justify-center rounded-xl ${
+                certificateLocked
+                  ? "bg-pink-500/15 text-pink-200"
+                  : "bg-yellow-400/20 text-yellow-100"
+              }`}
+            >
+              {certificateLocked ? <FiShield size={18} /> : <FiAward size={18} />}
+            </div>
+
+            <div className="flex-1">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-richblack-400">
+                    Certificate
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-richblack-5">
+                    {certificateLocked ? "Locked" : "Unlocked"}
+                  </p>
+                </div>
+
+                <span
+                  className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${
+                    certificateLocked
+                      ? "bg-pink-500/15 text-pink-200"
+                      : "bg-yellow-300 text-richblack-900"
+                  }`}
+                >
+                  {certificateLocked ? "Restricted" : "Ready"}
+                </span>
+              </div>
+
+              <p className="mt-3 text-sm leading-6 text-richblack-300">
+                {certificateLocked
+                  ? certificateMessage
+                  : "All tests are cleared cleanly. Your certificate is unlocked."}
+              </p>
+
+              <button
+                type="button"
+                disabled={certificateLocked}
+                className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                  certificateLocked
+                    ? "cursor-not-allowed border border-richblack-600 bg-richblack-700 text-richblack-400"
+                    : "bg-yellow-50 text-richblack-900 hover:bg-yellow-100"
+                }`}
+              >
+                {certificateLocked ? <FiShield size={16} /> : <FiUnlock size={16} />}
+                {certificateLocked ? "Certificate Locked" : "Certificate Unlocked"}
+              </button>
+            </div>
           </div>
         </div>
 

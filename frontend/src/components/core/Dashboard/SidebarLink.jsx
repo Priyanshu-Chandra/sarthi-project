@@ -8,7 +8,7 @@ import { setOpenSideMenu } from "../../../slices/sidebarSlice"
 
 
 export default function SidebarLink({ link, iconName }) {
-  const Icon = Icons[iconName]
+  const Icon = Icons[iconName] || Icons["VscQuestion"]
   const location = useLocation()
   const dispatch = useDispatch()
 

@@ -117,7 +117,10 @@ function Catalog() {
                 </div>
                 <div>
                     <Course_Slider
-                        Courses={catalogPageData?.selectedCategory?.courses}
+                        Courses={active === 1 
+                            ? catalogPageData?.mostPopularCourses 
+                            : catalogPageData?.newestCourses
+                        }
                     />
                 </div>
             </div>
@@ -131,6 +134,18 @@ function Catalog() {
                     <Course_Slider
                         Courses={catalogPageData?.differentCategory?.courses}
                     />
+                </div>
+            </div>
+
+            {/* NEW SECTION: Explore All Courses */}
+            <div className=" mx-auto box-content w-full max-w-maxContentTab px-4 py-12 lg:max-w-maxContent">
+                <div className="section_heading mb-8">
+                    Explore All {catalogPageData?.selectedCategory?.name} Courses
+                </div>
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {catalogPageData?.selectedCategory?.courses?.map((course, i) => (
+                        <Course_Card course={course} key={i} Height={"h-[250px]"} />
+                    ))}
                 </div>
             </div>
 

@@ -12,7 +12,10 @@ const {
     editCourse,
     deleteCourse,
     getInstructorCourses,
-
+    verifyCertificate,
+    markCourseAsCompleted,
+    enableCertificateForCourse,
+    downloadCertificate,
 } = require('../controllers/course')
 
 const { updateCourseProgress } = require('../controllers/courseProgress')
@@ -94,6 +97,18 @@ router.delete("/deleteCourse", auth, isInstructor, deleteCourse)
 
 // update Course Progress
 router.post("/updateCourseProgress", auth, isStudent, updateCourseProgress)
+
+// Verify Certificate (public — no auth)
+router.get("/verify-certificate/:certificateId", verifyCertificate)
+
+// Instructor: Mark course as completed
+router.patch("/markCourseAsCompleted/:courseId", auth, isInstructor, markCourseAsCompleted)
+
+// Instructor: Enable certificate for a course
+router.patch("/enableCertificate/:courseId", auth, isInstructor, enableCertificateForCourse)
+
+// Student: Download certificate PDF
+router.get("/downloadCertificate/:courseId", auth, isStudent, downloadCertificate)
 
 
 
