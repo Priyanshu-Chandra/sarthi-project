@@ -130,17 +130,17 @@ function PostTestAnalysis({ analysis }) {
               <div className="mt-5 flex items-center">
                 <div className={`flex items-center gap-4 px-5 py-2 rounded-xl bg-black/20 border border-white/5`}>
                   <div className="flex flex-col">
-                    <span className="text-[10px] text-richblack-400 font-bold">Score</span>
+                    <span className="text-[10px] text-richblack-200 font-bold">Score</span>
                     <span className="text-sm font-bold text-white">{score}/{totalQuestions}</span>
                   </div>
                   <div className="w-px h-6 bg-richblack-700" />
                   <div className="flex flex-col">
-                    <span className="text-[10px] text-richblack-400 font-bold">Accuracy</span>
+                    <span className="text-[10px] text-richblack-200 font-bold">Accuracy</span>
                     <span className="text-sm font-bold text-white">{percentage}%</span>
                   </div>
                   <div className="w-px h-6 bg-richblack-700" />
                   <div className="flex flex-col">
-                    <span className="text-[10px] text-richblack-400 font-bold">Time taken</span>
+                    <span className="text-[10px] text-richblack-200 font-bold">Time taken</span>
                     <span className="text-sm font-bold text-white">{formatTime(timeTakenSeconds)}</span>
                   </div>
                 </div>
@@ -181,7 +181,7 @@ function PostTestAnalysis({ analysis }) {
                 { label: "Atmosphere", value: cheatingSummary.noiseDetected ? "Active" : "Quiet", alert: cheatingSummary.noiseDetected },
               ].map((stat, i) => (
                 <div key={i} className={`p-4 rounded-xl border transition-all ${stat.alert ? "border-amber-500/20 bg-amber-500/5 text-amber-400" : "border-richblack-800 bg-richblack-800/30 text-white"}`}>
-                  <p className="text-[9px] font-bold text-richblack-400 mb-1.5 uppercase tracking-wider">{stat.label}</p>
+                  <p className="text-[9px] font-bold text-richblack-100 mb-1.5 uppercase tracking-wider">{stat.label}</p>
                   <p className="text-lg font-bold">{stat.value}</p>
                 </div>
               ))}
@@ -193,13 +193,13 @@ function PostTestAnalysis({ analysis }) {
         {cheatingSummary?.violationLogs?.length > 0 && (
           <div className="rounded-2xl border border-richblack-800 bg-[#070707]">
              <div className="px-6 py-4 border-b border-richblack-800 bg-richblack-900/20 flex items-center justify-between">
-                <h4 className="text-[10px] font-bold text-richblack-400 uppercase tracking-widest flex items-center gap-2">
+                <h4 className="text-[10px] font-bold text-richblack-100 uppercase tracking-widest flex items-center gap-2">
                   📊 Observation chronology
                 </h4>
              </div>
              <div className="p-2 flex flex-col gap-1 max-h-[200px] overflow-y-auto custom-scrollbar">
                 {cheatingSummary.violationLogs.map((log, idx) => {
-                  const meta = violationDisplayMap[log.type] || { label: log.type, icon: "⚠️", color: "text-richblack-400" };
+                  const meta = violationDisplayMap[log.type] || { label: log.type, icon: "⚠️", color: "text-richblack-200" };
                   return (
                     <div key={idx} className="flex items-center justify-between px-4 py-2 hover:bg-richblack-800/20 rounded-lg transition-colors border border-transparent hover:border-richblack-800/40">
                        <div className="flex items-center gap-3">
@@ -207,7 +207,7 @@ function PostTestAnalysis({ analysis }) {
                           <span className={`text-[11px] font-bold ${meta.color}`}>{meta.label}</span>
                        </div>
                        <div className="flex items-center gap-4">
-                          <span className="text-[10px] font-black border border-richblack-700 px-2 py-0.5 rounded-md text-richblack-400 bg-richblack-900">
+                          <span className="text-[10px] font-black border border-richblack-700 px-2 py-0.5 rounded-md text-richblack-200 bg-richblack-800">
                              Penalty: -{log.weight || 2}
                           </span>
                        </div>
@@ -221,13 +221,13 @@ function PostTestAnalysis({ analysis }) {
         {/* Topic Breakdown Table */}
         {topicBreakdown.length > 0 && (
           <div>
-            <p className="text-[10px] text-richblack-500 mb-4 font-bold uppercase tracking-widest flex items-center gap-2">
+            <p className="text-[10px] text-richblack-200 mb-4 font-bold uppercase tracking-widest flex items-center gap-2">
                📈 Topic breakdown
             </p>
             <div className="rounded-2xl overflow-hidden border border-richblack-800 bg-[#050505]">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-richblack-900/50 text-richblack-400 text-[9px] uppercase tracking-wider font-bold">
+                  <tr className="bg-richblack-900/50 text-richblack-100 text-[9px] uppercase tracking-wider font-bold">
                     <th className="px-6 py-4 text-left">Knowledge area</th>
                     <th className="px-6 py-4 text-center">{testType === "CODING" ? "Solved" : "Correct"}</th>
                     <th className="px-6 py-4 text-center">Total</th>
@@ -260,7 +260,7 @@ function PostTestAnalysis({ analysis }) {
                         <td className="px-6 py-5 text-center font-black text-white">
                           {row.total - row.wrong}
                         </td>
-                        <td className="px-6 py-5 text-center text-richblack-400 font-medium">{row.total}</td>
+                        <td className="px-6 py-5 text-center text-richblack-100 font-medium">{row.total}</td>
                         <td className="px-6 py-5 text-center">
                           <div className={`inline-block px-4 py-1.5 rounded-full border font-black text-xs text-white shadow-[0_0_15px_rgba(0,0,0,0.5)] ${
                             accuracy >= 90 ? "bg-emerald-600 border-emerald-400 shadow-emerald-500/20" :
@@ -287,7 +287,7 @@ function PostTestAnalysis({ analysis }) {
                <span className="text-2xl">🎯</span>
                <div>
                   <p className="font-bold text-indigo-400 tracking-tight">Personalized practice</p>
-                  <p className="text-sm text-richblack-400 font-medium mt-1">Strengthen your core by practicing these specific topics.</p>
+                  <p className="text-sm text-richblack-100 font-medium mt-1">Strengthen your core by practicing these specific topics.</p>
                </div>
             </div>
             <Link
@@ -306,7 +306,7 @@ function PostTestAnalysis({ analysis }) {
               <span className="text-2xl">💡</span>
               <div>
                 <p className="font-bold text-yellow-500 tracking-tight">Smarter recommendations</p>
-                <p className="text-sm text-richblack-400 font-medium">Based on your weak areas, we suggest exploring these topics next.</p>
+                <p className="text-sm text-richblack-100 font-medium">Based on your weak areas, we suggest exploring these topics next.</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">

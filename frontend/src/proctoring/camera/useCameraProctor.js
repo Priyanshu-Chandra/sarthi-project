@@ -8,6 +8,7 @@ export default function useCameraProctor({
   autoStart = true,
   onCameraError,
   emitViolation,
+  initialStream = null,
 }) {
   const streamRef = useRef(null);
   const retryCountRef = useRef(0);
@@ -54,7 +55,17 @@ export default function useCameraProctor({
     }
 
     try {
-      const stream = await requestCameraStream();
+      let stream;
+      // Use handed-over stream if available and healthy on first run
+      if (initialStream && initialStream.active && retryCountRef.current === 0 && !streamRef.current) {
+        stream = initialStream;
+      } else {
+        // Give the OS 500ms breather before requesting a fresh stream
+        if (retryCountRef.current > 0 || initialStream) {
+          await new Promise((res) => setTimeout(res, 500));
+        }
+        stream = await requestCameraStream();
+      }
 
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {

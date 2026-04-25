@@ -14,19 +14,18 @@ const violationMessages = {
   FACE_MISSING: "Face not detected. Please stay in front of the camera.",
   MULTIPLE_FACES: "Multiple faces detected. Only one person is allowed during the test.",
   FACE_TOO_FAR: "You are too far from the camera. Please stay clearly visible.",
-  LOOKING_AWAY: "Please keep your face directed toward the screen.",
   MIC_ACTIVITY: "Unusual audio activity detected during the test.",
 };
 
 // Define explicit weights for different violations
 const violationWeights = {
-  COPY: 2, PASTE: 2, RIGHT_CLICK: 2, KEYBOARD_SHORTCUT: 2, FULLSCREEN_EXIT: 2, 
-  TAB_SWITCH: 2, WINDOW_BLUR: 2, DEVTOOLS: 2, LOOKING_AWAY: 2,
-  FACE_MISSING: 10, CAMERA_OBSTRUCTED: 10, CAMERA_DISABLED: 10, FACE_TOO_FAR: 10,
-  MULTIPLE_FACES: 25, MIC_ACTIVITY: 25,
+  COPY: 2, PASTE: 2, RIGHT_CLICK: 2, KEYBOARD_SHORTCUT: 2, FULLSCREEN_EXIT: 20, 
+  TAB_SWITCH: 20, WINDOW_BLUR: 20, DEVTOOLS: 25,
+  FACE_MISSING: 10, CAMERA_OBSTRUCTED: 10, CAMERA_DISABLED: 25, FACE_TOO_FAR: 10,
+  MULTIPLE_FACES: 25, MIC_ACTIVITY: 15,
 };
 
-const violationCooldown = 1500;
+// Cooldown is now dynamic based on violation type
 
 export default function useExamProctoring({
   onViolationLevel, // Callback receiving (level, message, integrityScore)
@@ -46,6 +45,7 @@ export default function useExamProctoring({
   
   const lastViolationMapRef = useRef({});
   const globalLastViolationRef = useRef(Date.now());
+  const lastUIPopupTimeRef = useRef(0);
   const shouldEnforceFullscreen = useRef(false);
 
   const persistState = useCallback(() => {
@@ -106,9 +106,11 @@ export default function useExamProctoring({
     if (!isEnabled) return;
     const now = Date.now();
     
-    // Per-type cooldown check
+    // Per-type cooldown check (20s for Hard, 10s for Soft)
+    const hardViolations = ["TAB_SWITCH", "WINDOW_BLUR", "DEVTOOLS", "MULTIPLE_FACES", "CAMERA_DISABLED", "FULLSCREEN_EXIT", "COPY", "PASTE", "RIGHT_CLICK", "KEYBOARD_SHORTCUT"];
+    const cooldownPeriod = hardViolations.includes(type) ? 20000 : 10000;
     const lastTypeTime = lastViolationMapRef.current[type] || 0;
-    if (now - lastTypeTime < violationCooldown) return;
+    if (now - lastTypeTime < cooldownPeriod) return;
     
     lastViolationMapRef.current[type] = now;
     globalLastViolationRef.current = now;
@@ -124,46 +126,53 @@ export default function useExamProctoring({
     persistState();
 
     const currentScore = integrityScore.current;
+    const isCritical = currentScore <= 50;
     
-    // Score-Based Escalation Matrix (calm & authoritative)
-    if (currentScore > 90) {
-      // Passive Transparent Feedback
-      if (onSystemStatus) {
-        onSystemStatus(`Minor activity detected (Confidence: ${currentScore}%)`);
-        systemStatusRef.current = `Minor activity detected (Confidence: ${currentScore}%)`;
+    // Score-Based Escalation Matrix with 10s UI throttle
+    if (isCritical || now - lastUIPopupTimeRef.current >= 10000) {
+      if (!isCritical) {
+        lastUIPopupTimeRef.current = now;
       }
-      if (onViolationLevel) onViolationLevel(0, null, currentScore);
-    } 
-    else if (currentScore > 80) {
-      // Level 1: Soft Toast
-      if (onViolationLevel) onViolationLevel(1, `System status: Slightly unstable (${type.replace('_', ' ').toLowerCase()}).`, currentScore);
-      if (onSystemStatus) {
-        onSystemStatus(`Caution: Active Monitoring`);
-        systemStatusRef.current = `Caution: Active Monitoring`;
+
+      if (currentScore > 90) {
+        // Passive Transparent Feedback
+        if (onSystemStatus) {
+          onSystemStatus(`Minor activity detected (Confidence: ${currentScore}%)`);
+          systemStatusRef.current = `Minor activity detected (Confidence: ${currentScore}%)`;
+        }
+        if (onViolationLevel) onViolationLevel(0, null, currentScore);
+      } 
+      else if (currentScore > 80) {
+        // Level 1: Soft Toast
+        if (onViolationLevel) onViolationLevel(1, `System status: Slightly unstable (${type.replace('_', ' ').toLowerCase()}).`, currentScore);
+        if (onSystemStatus) {
+          onSystemStatus(`Caution: Active Monitoring`);
+          systemStatusRef.current = `Caution: Active Monitoring`;
+        }
+      } 
+      else if (currentScore > 65) {
+        // Level 2: Medium Warning
+        if (onViolationLevel) onViolationLevel(2, `Attention Required: Significant integrity variance detected.`, currentScore);
+        if (onSystemStatus) {
+          onSystemStatus(`Focus Threshold Warning`);
+          systemStatusRef.current = `Focus Threshold Warning`;
+        }
       }
-    } 
-    else if (currentScore > 65) {
-      // Level 2: Medium Warning
-      if (onViolationLevel) onViolationLevel(2, `Attention Required: Significant integrity variance detected.`, currentScore);
-      if (onSystemStatus) {
-        onSystemStatus(`Focus Threshold Warning`);
-        systemStatusRef.current = `Focus Threshold Warning`;
+      else if (currentScore > 50) {
+        // Level 3: Hard Warning
+        if (onViolationLevel) onViolationLevel(3, `Final Warning: Your activity pattern is reaching a critical threshold.`, currentScore);
+        if (onSystemStatus) {
+          onSystemStatus(`Submission Risk: CRITICAL`);
+          systemStatusRef.current = `Submission Risk: CRITICAL`;
+        }
       }
-    }
-    else if (currentScore > 50) {
-      // Level 3: Hard Warning
-      if (onViolationLevel) onViolationLevel(3, `Final Warning: Your activity pattern is reaching a critical threshold.`, currentScore);
-      if (onSystemStatus) {
-        onSystemStatus(`Submission Risk: CRITICAL`);
-        systemStatusRef.current = `Submission Risk: CRITICAL`;
-      }
-    }
-    else {
-      // Level 4: Final Notice (Triggers Pre-Submit Overlay)
-      if (onViolationLevel) onViolationLevel(4, `Compliance Bridge: Preparing for automated submission.`, currentScore);
-      if (onSystemStatus) {
-        onSystemStatus(`Manual Revision Required`);
-        systemStatusRef.current = `Manual Revision Required`;
+      else {
+        // Level 4: Final Notice (Triggers Pre-Submit Overlay)
+        if (onViolationLevel) onViolationLevel(4, `Compliance Bridge: Preparing for automated submission.`, currentScore);
+        if (onSystemStatus) {
+          onSystemStatus(`Manual Revision Required`);
+          systemStatusRef.current = `Manual Revision Required`;
+        }
       }
     }
   }, [isEnabled, onSystemStatus, onViolationLevel, persistState]);
@@ -290,7 +299,7 @@ export default function useExamProctoring({
     };
   }, [isEnabled, emitViolation, emitWarning]);
 
-  const enterFullscreen = async () => {
+  const enterFullscreen = useCallback(async () => {
     try {
       shouldEnforceFullscreen.current = true;
       await document.documentElement.requestFullscreen();
@@ -300,9 +309,9 @@ export default function useExamProctoring({
       console.warn("Failed to enter fullscreen mode:", error);
       return false;
     }
-  };
+  }, []);
 
-  const exitFullscreen = async () => {
+  const exitFullscreen = useCallback(async () => {
     shouldEnforceFullscreen.current = false;
     if (!document.fullscreenElement) return;
     try {
@@ -310,7 +319,7 @@ export default function useExamProctoring({
     } catch (error) {
       console.warn("Failed to exit fullscreen mode:", error);
     }
-  };
+  }, []);
 
   return {
     getIntegrityScore: () => integrityScore.current,

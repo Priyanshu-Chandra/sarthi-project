@@ -262,7 +262,7 @@ const SystemCheckWizard = ({ quiz, durationMins, onComplete, warning, videoRef, 
              <div className="text-center animate-fadeIn">
                 <div className="w-20 h-20 mx-auto bg-richblack-800 border-2 border-richblack-600 rounded-full flex items-center justify-center text-4xl mb-6 shadow-xl">🛡️</div>
                 <h2 className="text-xl font-bold text-white mb-4">Sarthi proctoring engine</h2>
-                <p className="text-richblack-300 mb-8 max-w-lg mx-auto font-medium leading-relaxed">
+                <p className="text-richblack-100 mb-8 max-w-lg mx-auto font-medium leading-relaxed">
                   Before we begin, we must verify your environment. This ensures a fair, uninterrupted assessment for all candidates.
                 </p>
                 <div className="flex justify-center">
@@ -279,11 +279,11 @@ const SystemCheckWizard = ({ quiz, durationMins, onComplete, warning, videoRef, 
                    {mediaStatus === 'failed' ? '❌' : '🎬'}
                 </div>
                 <h2 className="text-xl font-bold text-white mb-2">Media & sensors</h2>
-                <p className="text-richblack-400 text-sm mb-6">Requesting camera and microphone access...</p>
+                <p className="text-richblack-100 text-sm mb-6">Requesting camera and microphone access...</p>
                 {mediaStatus === 'failed' && (
                   <div className="flex flex-col items-center gap-4">
                     <button onClick={checkMedia} className="px-6 py-3 bg-red-500 text-white font-bold rounded-xl active:scale-95 transition-all">Retry access</button>
-                    <p className="text-[10px] text-richblack-500 max-w-xs italic">
+                    <p className="text-[10px] text-richblack-200 max-w-xs italic">
                        Brave User? You may need to disable "Shields" or allow Fingerprinting in your browser settings for this site.
                     </p>
                   </div>
@@ -297,7 +297,7 @@ const SystemCheckWizard = ({ quiz, durationMins, onComplete, warning, videoRef, 
                    {netStatus === 'failed' ? '❌' : '🌐'}
                 </div>
                 <h2 className="text-xl font-bold text-white mb-2">Network link</h2>
-                <p className="text-richblack-400 text-sm mb-6">Verifying your internet stability for secure data sync.</p>
+                <p className="text-richblack-100 text-sm mb-6">Verifying your internet stability for secure data sync.</p>
                 {netStatus === 'failed' && (
                   <button onClick={checkNetwork} className="px-6 py-3 bg-red-500 text-white font-bold rounded-xl mt-4 active:scale-95 transition-all">Retry link</button>
                 )}
@@ -310,7 +310,7 @@ const SystemCheckWizard = ({ quiz, durationMins, onComplete, warning, videoRef, 
                    ✅
                 </div>
                 <h2 className="text-2xl font-bold text-emerald-400 mb-2">System verified</h2>
-                <p className="text-richblack-400 text-sm mb-6 font-medium">All sensors and network links are secure. Verify your camera below:</p>
+                <p className="text-richblack-100 text-sm mb-6 font-medium">All sensors and network links are secure. Verify your camera below:</p>
 
                 {/* Camera Preview in Wizard */}
                 <div className="mb-8 max-w-sm mx-auto aspect-video bg-richblack-900 rounded-2xl border-2 border-richblack-700 overflow-hidden relative shadow-2xl">
@@ -334,7 +334,7 @@ const SystemCheckWizard = ({ quiz, durationMins, onComplete, warning, videoRef, 
                   </div>
                 )}
 
-                <p className="text-xs text-richblack-500 font-semibold">
+                <p className="text-xs text-richblack-200 font-semibold">
                   Use the highlighted action bar at the bottom to start the test.
                 </p>
              </div>
@@ -363,7 +363,7 @@ const SystemCheckWizard = ({ quiz, durationMins, onComplete, warning, videoRef, 
   );
 };
 
-const ProctorPanel = memo(({ videoRef, faceDetected, isCentered, isCameraActive, isMicActive }) => {
+const ProctorPanel = memo(({ videoRef, faceDetected, isCameraActive, isMicActive }) => {
   return (
     <div className="fixed bottom-6 right-6 z-[60] w-56 bg-richblack-900 border border-richblack-700 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden">
          <div className="bg-richblack-800/50 px-4 py-2.5 border-b border-richblack-700 flex justify-between items-center">
@@ -386,30 +386,23 @@ const ProctorPanel = memo(({ videoRef, faceDetected, isCentered, isCameraActive,
          {/* Status Badges - Real Data Bound */}
          <div className="px-4 pb-4 flex justify-between gap-2">
             <div className="flex flex-col flex-1">
-              <span className="text-[8px] font-bold text-richblack-600 tracking-wider">Face presence</span>
+              <span className="text-[8px] font-bold text-richblack-200 tracking-wider">Face presence</span>
               <span className={`text-[10px] font-bold flex items-center gap-1.5 mt-0.5 ${faceDetected ? 'text-emerald-400' : 'text-red-400'}`}>
                 <span className="text-[8px]">{faceDetected ? '✅' : '🚫'}</span> 
                 {faceDetected ? 'Secure' : 'Not detected'}
-              </span>
-            </div>
-            <div className="flex flex-col flex-1">
-              <span className="text-[8px] font-bold text-richblack-600 tracking-wider">Gaze focus</span>
-              <span className={`text-[10px] font-bold flex items-center gap-1.5 mt-0.5 ${isCentered ? 'text-emerald-400' : 'text-amber-400'}`}>
-                <span className="text-[8px]">{isCentered ? '🎯' : '⚠️'}</span>
-                {isCentered ? 'Optimal' : 'Looking away'}
               </span>
             </div>
          </div>
 
          <div className="px-4 pb-4 flex justify-between gap-2 border-t border-richblack-800">
             <div className="flex flex-col flex-1 pt-3">
-              <span className="text-[8px] font-bold text-richblack-600 tracking-wider">Camera</span>
+              <span className="text-[8px] font-bold text-richblack-200 tracking-wider">Camera</span>
               <span className={`text-[10px] font-bold mt-0.5 ${isCameraActive ? "text-emerald-400" : "text-red-400"}`}>
                 {isCameraActive ? "Connected" : "Offline"}
               </span>
             </div>
             <div className="flex flex-col flex-1 pt-3">
-              <span className="text-[8px] font-bold text-richblack-600 tracking-wider">Mic</span>
+              <span className="text-[8px] font-bold text-richblack-200 tracking-wider">Mic</span>
               <span className={`text-[10px] font-bold mt-0.5 ${isMicActive ? "text-emerald-400" : "text-red-400"}`}>
                 {isMicActive ? "Connected" : "Offline"}
               </span>
@@ -632,7 +625,7 @@ export default function AttemptQuiz() {
     }
   };
 
-  const safeSubmitExam = async () => {
+  const safeSubmitExam = useCallback(async () => {
     if (hasSubmittedRef.current) return;
     hasSubmittedRef.current = true;
     try {
@@ -645,7 +638,7 @@ export default function AttemptQuiz() {
       hasSubmittedRef.current = false;
       setIsSubmitting(false);
     }
-  };
+  }, [exitFullscreen]);
 
   submitHandlerRef.current = handleSubmit;
 
@@ -660,15 +653,18 @@ export default function AttemptQuiz() {
     return () => clearTimeout(timer);
   }, [showPreSubmitWarning, submitCountdown]);
 
+  const handleCameraError = useCallback((err) => {
+    console.error("Proctoring Camera Failure:", err);
+    emitViolation("CAMERA_DISABLED");
+  }, [emitViolation]);
+
   const { isActive: isCameraActive, stream: cameraStream } = useCameraProctor({
     isEnabled: !isSubmitted && !!quiz,
     videoElement: cameraNode,
     autoStart: hasStartedExam,
     emitViolation,
-    onCameraError: (err) => {
-      console.error("Proctoring Camera Failure:", err);
-      emitViolation("CAMERA_DISABLED");
-    },
+    onCameraError: handleCameraError,
+    initialStream: preflightCameraStreamRef.current,
   });
 
   const handleExit = () => {
@@ -689,7 +685,7 @@ export default function AttemptQuiz() {
     }
   };
 
-  const { faceDetected, isCentered } = useFaceMonitor({
+  const { faceDetected } = useFaceMonitor({
     videoElement: cameraNode,
     isEnabled: hasStartedExam && !isSubmitted && isCameraActive,
     emitViolation,
@@ -787,19 +783,7 @@ export default function AttemptQuiz() {
     return stream;
   }, [preflightCameraReady]);
 
-  useEffect(() => {
-    if (!hasStartedExam && !isSubmitted) return;
-
-    if (preflightCameraStreamRef.current) {
-      preflightCameraStreamRef.current.getTracks().forEach((track) => track.stop());
-      preflightCameraStreamRef.current = null;
-    }
-
-    if (preflightMicStreamRef.current) {
-      preflightMicStreamRef.current.getTracks().forEach((track) => track.stop());
-      preflightMicStreamRef.current = null;
-    }
-  }, [hasStartedExam, isSubmitted]);
+  // Preflight streams are now handed over to the proctoring hooks instead of being killed.
 
   useEffect(() => {
     return () => {
@@ -1252,17 +1236,17 @@ export default function AttemptQuiz() {
 
               {/* Stats row */}
               <div className="grid grid-cols-3 gap-6">
-                <div className="bg-richblack-900 border border-richblack-800 rounded-2xl p-6 text-center shadow-lg">
+                <div className="bg-richblack-900 border border-richblack-700 rounded-2xl p-6 text-center shadow-lg">
                   <p className="text-3xl font-black text-white">{r?.total ?? 0}</p>
-                  <p className="text-[10px] text-richblack-500 mt-2 uppercase tracking-[0.2em] font-black">Questions</p>
+                  <p className="text-[10px] text-richblack-100 mt-2 uppercase tracking-[0.2em] font-black">Questions</p>
                 </div>
-                <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-2xl p-6 text-center shadow-lg">
+                <div className="bg-emerald-900/40 border border-emerald-500/30 rounded-2xl p-6 text-center shadow-lg">
                   <p className="text-3xl font-black text-emerald-400">{correctCount}</p>
-                  <p className="text-[10px] text-emerald-500/60 mt-2 uppercase tracking-[0.2em] font-black">Passed</p>
+                  <p className="text-[10px] text-emerald-100 mt-2 uppercase tracking-[0.2em] font-black">Passed</p>
                 </div>
-                <div className="bg-red-950/30 border border-red-500/20 rounded-2xl p-6 text-center shadow-lg">
+                <div className="bg-red-900/40 border border-red-500/30 rounded-2xl p-6 text-center shadow-lg">
                   <p className="text-3xl font-black text-red-500">{wrongCount}</p>
-                  <p className="text-[10px] text-red-500/60 mt-2 uppercase tracking-[0.2em] font-black">Failed</p>
+                  <p className="text-[10px] text-red-100 mt-2 uppercase tracking-[0.2em] font-black">Failed</p>
                 </div>
               </div>
 
@@ -1297,7 +1281,7 @@ export default function AttemptQuiz() {
                       <div className="flex items-start justify-between gap-4 mb-4">
                         <div className="flex-1">
                            <p className="font-black text-white text-base flex items-center gap-3 tracking-tight">
-                             <span className="text-richblack-500 font-mono text-sm uppercase tracking-tighter">PRB {i + 1}</span>
+                             <span className="text-richblack-200 font-mono text-sm uppercase tracking-tighter">PRB {i + 1}</span>
                              {d.question}
                            </p>
                         </div>
@@ -1312,19 +1296,19 @@ export default function AttemptQuiz() {
                            {/* Coding Specific Review */}
                            <div className="flex flex-wrap gap-4">
                              <div className="flex flex-col gap-1">
-                               <span className="text-[10px] text-richblack-500 uppercase font-bold tracking-widest">TestCase Pass Rate</span>
+                               <span className="text-[10px] text-richblack-100 uppercase font-bold tracking-widest">TestCase Pass Rate</span>
                                <p className="text-white font-mono font-bold">
                                  {d.passedTestCases} / {d.totalTestCases}
-                                 <span className="ml-2 text-xs text-richblack-400">({Math.round(d.passRatio * 100)}%)</span>
+                                 <span className="ml-2 text-xs text-richblack-200">({Math.round(d.passRatio * 100)}%)</span>
                                </p>
                              </div>
                            </div>
 
                            {d.code && (
                              <div className="mt-4">
-                               <p className="text-[10px] text-richblack-500 uppercase font-bold mb-2 tracking-widest">Submitted Code</p>
-                               <div className="relative rounded-lg border border-richblack-800 bg-black p-4 font-mono text-xs overflow-x-auto max-h-60 shadow-inner">
-                                 <pre className="text-richblack-100"><code>{d.code}</code></pre>
+                               <p className="text-[10px] text-richblack-100 uppercase font-bold mb-2 tracking-widest">Submitted Code</p>
+                               <div className="relative rounded-lg border border-richblack-700 bg-richblack-900 p-4 font-mono text-xs overflow-x-auto max-h-60 shadow-inner">
+                                 <pre className="text-white"><code>{d.code}</code></pre>
                                </div>
                              </div>
                            )}
@@ -1345,12 +1329,17 @@ export default function AttemptQuiz() {
                               <span className="ml-3 font-bold opacity-60 text-[11px]">— {quiz.questions[i].options[d.selectedOption]}</span>
                             )}
                           </p>
-                          {!d.isCorrect && (
+                          {!d.isCorrect && passed && (
                             <p className="text-xs px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black inline-block shadow-lg">
                               Correct answer: <span className="ml-2 text-base uppercase text-white font-black">{String.fromCharCode(65 + d.correctOption)}</span>
                               {quiz?.questions[i]?.options[d.correctOption] && (
                                  <span className="ml-3 font-bold opacity-60 text-[11px]">— {quiz.questions[i].options[d.correctOption]}</span>
                               )}
+                            </p>
+                          )}
+                          {!d.isCorrect && !passed && (
+                            <p className="text-xs px-4 py-2.5 rounded-xl bg-richblack-800 border border-richblack-700 text-richblack-300 font-bold inline-block shadow-lg italic">
+                              Correct answer hidden. Pass the test to unlock detailed solutions.
                             </p>
                           )}
                         </div>
@@ -1514,13 +1503,12 @@ export default function AttemptQuiz() {
   // ── Unified Security HUD Shell ──────────────────────────────────────────────
   return (
     <div className="h-screen w-full overflow-hidden bg-richblack-900 text-richblack-5 flex flex-col select-none shadow-lg">
-      <video ref={captureVideoRef} autoPlay muted playsInline className="hidden" />
+      <video ref={captureVideoRef} autoPlay muted playsInline className="opacity-0 absolute top-0 left-0 w-1 h-1 pointer-events-none" />
       <SystemStatusBar status={systemStatus} integrityScore={integrityScore} />
       <ToastWarning toast={toastWarning} />
       <ProctorPanel 
         videoRef={panelPreviewRef} 
         faceDetected={faceDetected} 
-        isCentered={isCentered} 
         isCameraActive={isCameraActive}
         isMicActive={isMicActive}
       />
@@ -1643,12 +1631,12 @@ export default function AttemptQuiz() {
               </div>
 
               <div className="flex justify-between items-center mt-12 pt-8 border-t border-richblack-800">
-                <button onClick={() => setCurrentQ((q) => Math.max(q - 1, 0))} disabled={currentQ === 0} className="flex items-center gap-3 px-8 py-3.5 rounded-2xl bg-richblack-800 text-richblack-300 font-black uppercase text-xs tracking-widest hover:bg-richblack-700 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-300 border border-richblack-700 active:scale-95">
+                <button onClick={() => setCurrentQ((q) => Math.max(q - 1, 0))} disabled={currentQ === 0} className="flex items-center gap-3 px-8 py-3.5 rounded-2xl bg-richblack-700 text-richblack-50 font-black uppercase text-xs tracking-widest hover:bg-richblack-600 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-300 shadow-md active:scale-95">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
                   Previous
                 </button>
                 <div className="flex gap-1.5">{Array.from({length: Math.min(quiz.questions.length, 5)}).map((_, i) => (<div key={i} className={`w-1.5 h-1.5 rounded-full ${i === currentQ % 5 ? "bg-emerald-400 w-4 transition-all" : "bg-richblack-700"}`} />))}</div>
-                <button onClick={() => setCurrentQ((q) => Math.min(q + 1, quiz.questions.length - 1))} disabled={currentQ === quiz.questions.length - 1} className="flex items-center gap-3 px-8 py-3.5 rounded-2xl bg-richblack-800 text-richblack-300 font-black uppercase text-xs tracking-widest hover:bg-richblack-700 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-300 border border-richblack-700 active:scale-95">
+                <button onClick={() => setCurrentQ((q) => Math.min(q + 1, quiz.questions.length - 1))} disabled={currentQ === quiz.questions.length - 1} className="flex items-center gap-3 px-8 py-3.5 rounded-2xl bg-richblack-700 text-richblack-50 font-black uppercase text-xs tracking-widest hover:bg-richblack-600 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-300 shadow-md active:scale-95">
                   Next
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
                 </button>
@@ -1662,18 +1650,18 @@ export default function AttemptQuiz() {
                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               </div>
               <div className="grid grid-cols-2 gap-3 mb-10">
-                <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                <div className="flex flex-col gap-1 p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30">
                   <span className="text-emerald-400 text-lg font-black">{answeredCount}</span>
-                  <span className="text-[9px] font-black uppercase text-richblack-400">Done</span>
+                  <span className="text-[9px] font-black uppercase text-richblack-100">Answered</span>
                 </div>
-                <div className="flex flex-col gap-1 p-3 rounded-xl bg-yellow-400/5 border border-yellow-400/10">
+                <div className="flex flex-col gap-1 p-3 rounded-xl bg-yellow-500/20 border border-yellow-500/30">
                   <span className="text-yellow-400 text-lg font-black">{visited.size - answeredCount}</span>
-                  <span className="text-[9px] font-black uppercase text-richblack-400">Visit</span>
+                  <span className="text-[9px] font-black uppercase text-richblack-100">Visited</span>
                 </div>
               </div>
               <div className="grid grid-cols-5 gap-2.5">
                 {quiz.questions.map((_, idx) => (
-                  <button key={idx} onClick={() => setCurrentQ(idx)} className={`aspect-square flex items-center justify-center rounded-xl text-xs font-black transition-all duration-300 ${idx === currentQ ? "bg-white text-black scale-110" : answers[idx] !== null ? "bg-emerald-500 text-black" : visited.has(idx) ? "bg-yellow-400 text-black" : "bg-richblack-900/50 text-richblack-600"}`}>
+                  <button key={idx} onClick={() => setCurrentQ(idx)} className={`aspect-square flex items-center justify-center rounded-xl text-xs font-black transition-all duration-300 ${idx === currentQ ? "bg-white text-black ring-2 ring-emerald-500 scale-110" : answers[idx] !== null ? "bg-emerald-500 text-white" : visited.has(idx) ? "bg-yellow-500 text-white" : "bg-richblack-700 text-richblack-100 hover:bg-richblack-600"}`}>
                     {idx + 1}
                   </button>
                 ))}

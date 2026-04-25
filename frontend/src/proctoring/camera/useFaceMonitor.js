@@ -8,14 +8,12 @@ export default function useFaceMonitor({
   emitWarning,
 }) {
   const [faceDetected, setFaceDetected] = useState(false);
-  const [isCentered, setIsCentered] = useState(true);
 
   const detectorRef = useRef(null);
   const canvasRef = useRef(null);
   const intervalRef = useRef(null);
   const lastFaceSeenRef = useRef(Date.now());
   const lastFaceLargeEnoughRef = useRef(Date.now());
-  const lastCenteredRef = useRef(Date.now());
   const lastBrightRef = useRef(Date.now());
   const faceHistoryRef = useRef([]);
   const multipleFaceHistoryRef = useRef([]);
@@ -32,7 +30,6 @@ export default function useFaceMonitor({
 
       canvasRef.current = null;
       setFaceDetected(false);
-      setIsCentered(true);
     };
 
     const startDetection = async () => {
@@ -80,31 +77,6 @@ export default function useFaceMonitor({
 
           if (faces.length === 1) {
             lastFaceSeenRef.current = Date.now();
-            const box = faces[0].boundingBox;
-            const faceTooFar = box.width < 0.1 || box.height < 0.12;
-            const faceCenterX = box.xmin + box.width / 2;
-            const currentCentered = faceCenterX > 0.25 && faceCenterX < 0.75;
-            
-            setIsCentered(currentCentered);
-
-            if (!faceTooFar) {
-              lastFaceLargeEnoughRef.current = Date.now();
-            }
-
-            if (faceTooFar) {
-              if (Date.now() - lastFaceLargeEnoughRef.current > 5000) {
-                emitWarning("FACE_TOO_FAR");
-              }
-            }
-
-            if (currentCentered) {
-              lastCenteredRef.current = Date.now();
-            } else if (Date.now() - lastCenteredRef.current > 5000) {
-              emitWarning("LOOKING_AWAY");
-            }
-          }
-          else if (faces.length === 0) {
-             setIsCentered(false);
           }
 
           const noFaceConsistent =
@@ -146,7 +118,6 @@ export default function useFaceMonitor({
 
       lastFaceSeenRef.current = Date.now();
       lastFaceLargeEnoughRef.current = Date.now();
-      lastCenteredRef.current = Date.now();
       lastBrightRef.current = Date.now();
       faceHistoryRef.current = [];
       multipleFaceHistoryRef.current = [];
@@ -172,8 +143,8 @@ export default function useFaceMonitor({
         if (frameSampler) {
           const { canvas, context } = frameSampler;
 
-          canvas.width = 64;
-          canvas.height = 48;
+          canvas.width = 640;
+          canvas.height = 480;
 
           context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
@@ -192,9 +163,9 @@ export default function useFaceMonitor({
 
           brightness /= frame.length;
 
-          if (brightness > 20) {
+          if (brightness > 10) {
             lastBrightRef.current = Date.now();
-          } else if (Date.now() - lastBrightRef.current > 6000) {
+          } else if (Date.now() - lastBrightRef.current > 7000) {
             emitViolation("CAMERA_OBSTRUCTED");
           }
         }
@@ -204,7 +175,7 @@ export default function useFaceMonitor({
         } catch (error) {
           console.error("Face detection failed:", error);
         }
-      }, 750);
+      }, 400);
     };
 
     if (isEnabled) {
@@ -219,5 +190,5 @@ export default function useFaceMonitor({
     };
   }, [emitViolation, emitWarning, isEnabled, videoElement]);
 
-  return { faceDetected, isCentered };
+  return { faceDetected };
 }

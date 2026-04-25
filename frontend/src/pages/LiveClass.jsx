@@ -363,8 +363,13 @@ export default function LiveClass() {
         const { token: serverToken, appID } = tokenRes.data;
         console.log("📍 [Unified Init] Token Received. AppID:", appID);
         
+        // ✅ Switch to Production Token: uses the secure serverToken from the backend
         const kitToken = ZegoUIKitPrebuilt.generateKitTokenForProduction(
-          appID, serverToken, roomId, zegoUniqueId, userName
+          appID, 
+          serverToken, 
+          roomId, 
+          zegoUniqueId, 
+          userName
         );
 
         // 3. Join Room
@@ -390,6 +395,12 @@ export default function LiveClass() {
           },
           onLeaveRoom: () => {
             console.log("📍 [Unified Init] 🚪 onLeaveRoom Fired.");
+            // If instructor leaves using the red button, end the entire session
+            if (role === "instructor") {
+              endClass();
+            }
+            // Navigate out of the live class view for everyone
+            setTimeout(() => navigate(-1), 500);
           }
         });
 
@@ -627,7 +638,7 @@ export default function LiveClass() {
     // --- BOARD EVENTS ---
     socket.on("BOARD_DRAW", ({ userId: remoteUid, name, x, y, brushColor: rc, brushSize: rs, brushTool: rt, isDrawing }) => {
       // Use the stable unique ID for remote tracking
-      if (remoteUid === egoUniqueId) return; 
+      if (remoteUid === user?._id?.toString()) return; 
       
       const ctx = boardRef.current?.getContext("2d");
       if (!ctx) return;
@@ -684,7 +695,7 @@ export default function LiveClass() {
 
     const handleBoardDraw = (stroke) => {
       // ── Idempotency: Skip server echoes of our own strokes (Golden Rule) ──
-      if (stroke.userId === egoUniqueId) return;
+      if (stroke.userId === user?._id?.toString()) return;
 
       boardHistoryRef.current.push(stroke);
       setHistoryCount(boardHistoryRef.current.length);

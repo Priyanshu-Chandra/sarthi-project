@@ -254,13 +254,19 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
         pollTimers.delete(roomId);
       }
       if (instructorDisconnectTimers.has(roomId)) {
-      clearTimeout(instructorDisconnectTimers.get(roomId));
-      instructorDisconnectTimers.delete(roomId);
-    }
-    
-    console.timeEnd(`🏁 endSession-${sid}`);
-    return;
-  };
+        clearTimeout(instructorDisconnectTimers.get(roomId));
+        instructorDisconnectTimers.delete(roomId);
+      }
+
+      // Fix: Ensure the orphaned record in DB is actually marked as ended 
+      // otherwise reconciliation will keep finding it forever.
+      await LiveSession.findOneAndUpdate(
+        { liveRoomId: roomId, status: "active" },
+        { status: "ended", endedAt: new Date(), endedReason: reason }
+      );
+      
+      return;
+    };
 
     const sessionRecord = await LiveSession.findById(sid);
 

@@ -623,8 +623,8 @@ exports.getUserStats = async (req, res) => {
     // Compute level progress % using same formula as xpEngine
     const xp = userStatsRecord ? userStatsRecord.xp : 0;
     const level = userStatsRecord ? userStatsRecord.level : 1;
-    const currentLevelXP = Math.pow(level, 2) * 50;
-    const nextLevelXP = Math.pow(level + 1, 2) * 50;
+    const currentLevelXP = Math.pow(level - 1, 2) * 50;
+    const nextLevelXP = Math.pow(level, 2) * 50;
     const levelProgress = Math.min(100, Math.max(0, Math.round(
       ((xp - currentLevelXP) / (nextLevelXP - currentLevelXP)) * 100
     )));

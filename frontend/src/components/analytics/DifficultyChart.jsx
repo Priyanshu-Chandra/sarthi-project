@@ -19,18 +19,21 @@ const DifficultyChart = ({ data }) => {
 
   if (isEmpty) {
     return (
-      <div className="bg-[#1f2937] p-4 rounded-2xl shadow-md h-full min-h-[250px] flex flex-col items-center justify-center">
-        <h2 className="text-white text-lg mb-2">Difficulty Progression</h2>
-        <p className="text-gray-400">No problems solved yet.</p>
+      <div className="bg-richblack-800 border border-richblack-700 p-6 rounded-3xl shadow-xl h-full min-h-[250px] flex flex-col items-center justify-center">
+        <h2 className="text-white text-xl font-bold mb-3 tracking-tight">Difficulty Progression</h2>
+        <p className="text-richblack-300 text-sm">No problems solved yet.</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-[#1f2937] p-4 rounded-2xl shadow-md h-full min-h-[250px]">
-      <h2 className="text-white text-lg mb-4 text-center">
-        Difficulty Progression
-      </h2>
+    <div className="bg-richblack-800 border border-richblack-700 p-6 rounded-3xl shadow-xl h-full min-h-[250px]">
+      <div className="flex items-center gap-3 mb-6">
+        <span className="text-2xl">📊</span>
+        <h2 className="text-white text-xl font-bold tracking-tight">
+          Difficulty Progression
+        </h2>
+      </div>
 
       <ResponsiveContainer width="100%" height={240}>
         <BarChart data={formattedData}>
@@ -39,7 +42,9 @@ const DifficultyChart = ({ data }) => {
           <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} allowDecimals={false} />
           <Tooltip 
             cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }} 
-            contentStyle={{ backgroundColor: '#111827', borderColor: '#374151', borderRadius: '8px' }}
+            contentStyle={{ backgroundColor: '#161d29', borderColor: '#2c333f', borderRadius: '12px', color: '#f1f2ff' }}
+            itemStyle={{ color: '#4ade80', fontWeight: 'bold' }}
+            labelStyle={{ color: '#999daa', marginBottom: '4px' }}
           />
 
           <Bar 

@@ -1,13 +1,12 @@
 const UserStats = require("../models/UserStats");
 
 const calculateLevel = (xp) => {
-  const level = Math.floor(Math.sqrt(xp / 50));
-  return level > 0 ? level : 1;
+  return Math.floor(Math.sqrt(xp / 50)) + 1;
 };
 
 const getLevelProgress = (xp, level) => {
-  const currentLevelXP = Math.pow(level, 2) * 50;
-  const nextLevelXP = Math.pow(level + 1, 2) * 50;
+  const currentLevelXP = Math.pow(level - 1, 2) * 50;
+  const nextLevelXP = Math.pow(level, 2) * 50;
   const progress = Math.min(100, Math.max(0, Math.round(
     ((xp - currentLevelXP) / (nextLevelXP - currentLevelXP)) * 100
   )));
@@ -77,8 +76,7 @@ const bumpXP = async (userId, amount) => {
   if (!stats) return;
 
   stats.xp = (stats.xp || 0) + amount;
-  const calculatedLevel = Math.floor(Math.sqrt(stats.xp / 50));
-  stats.level = calculatedLevel > 0 ? calculatedLevel : 1;
+  stats.level = Math.floor(Math.sqrt(stats.xp / 50)) + 1;
 
   await stats.save();
 };

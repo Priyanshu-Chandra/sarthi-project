@@ -411,16 +411,16 @@ exports.generateZegoToken = async (req, res) => {
       });
     }
 
-    // Generate server SDK token (04 format).
-    // The userID MUST be a string. 
-    // Simplified payload for maximum compatibility with UIKit
-    const serverToken = generateToken04(appID, userId.toString(), serverSecret, 7200, JSON.stringify({
+    const privilegePayload = JSON.stringify({
       room_id: roomId,
       privilege: {
-        1: 1, // login
-        2: 1  // publish
-      }
-    }));
+        1: 1, // loginRoom
+        2: 1  // publishStream
+      },
+      stream_id_list: null
+    });
+
+    const serverToken = generateToken04(appID, userId.toString(), serverSecret, 7200, privilegePayload);
 
     const role = isInstructor ? "instructor" : "student";
     console.log(`✅ Server token generated successfully for ${role} | Room: ${roomId}`);
