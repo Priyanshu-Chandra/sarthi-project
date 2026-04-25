@@ -6,6 +6,7 @@ const {
   getTestSubjects,
   getTestsBySubject,
   getTestById,
+  startTestAttempt,
   submitTest,
   deleteTest,
   getStudentTestResults,
@@ -19,6 +20,7 @@ router.post("/create", auth, isInstructor, createTest);
 router.get("/course/:courseId/list", auth, getTestsByCourse);
 router.get("/subjects", auth, getTestSubjects);
 router.get("/by-subject/:subject", auth, isStudent, getTestsBySubject);
+router.post("/:id/start", auth, isStudent, startTestAttempt);
 router.post("/submit", auth, isStudent, submitTest);
 router.get("/results", auth, isStudent, getStudentTestResults);
 router.delete("/:id", auth, isInstructor, deleteTest);

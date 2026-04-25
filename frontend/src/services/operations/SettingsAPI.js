@@ -39,7 +39,7 @@ export function updateUserProfileImage(token, formData) {
 
       // below line is must - if not code - then as we refresh the page after changing profile image then old profile image will show 
       // as we only changes in user(store) not in localStorage
-      localStorage.setItem("user", JSON.stringify(response.data.data));
+      sessionStorage.setItem("user", JSON.stringify(response.data.data));
     } catch (error) {
       console.log("UPDATE_DISPLAY_PICTURE_API API ERROR............", error)
       toast.error("Could Not Update Profile Picture")
@@ -70,7 +70,7 @@ export function updateProfile(token, formData) {
 
    
       // console.log('DATA = ', data)
-      localStorage.setItem("user", JSON.stringify({ ...response.data.updatedUserDetails, image: userImage }));
+      sessionStorage.setItem("user", JSON.stringify({ ...response.data.updatedUserDetails, image: userImage }));
       toast.success("Profile Updated Successfully")
     } catch (error) {
       console.log("UPDATE_PROFILE_API API ERROR............", error)

@@ -6,18 +6,24 @@ exports.getExamOverview = async (req, res) => {
   try {
     const { testId } = req.params;
     const { Types } = require("mongoose");
+    const Test = require("../models/Test");
     
-    // Safety check for valid ObjectId
     if (!Types.ObjectId.isValid(testId)) {
        return res.status(400).json({ error: "Invalid testId format" });
     }
 
-    const PASS_THRESHOLD = 40; // Default adjust if needed
+    const oid = new Types.ObjectId(testId);
+    
+    // Fetch test details for passing threshold (default to 40 if not set)
+    const test = await Test.findById(oid).select("passingScore");
+    const PASS_THRESHOLD = test?.passingScore || 40;
+
+    console.log(`[Analytics] Fetching overview for Test: ${testId} (Pass Threshold: ${PASS_THRESHOLD})`);
 
     const aggregateStats = await TestResult.aggregate([
       { 
         $match: { 
-          testId: new Types.ObjectId(testId), 
+          $or: [{ testId: oid }, { quizId: oid }],
           status: { $in: ["COMPLETED", "CHEATED"] } 
         } 
       },
@@ -42,11 +48,14 @@ exports.getExamOverview = async (req, res) => {
     ]);
 
     if (!aggregateStats || aggregateStats.length === 0) {
-      return res.json({});
+      console.log(`[Analytics] No results found for Test: ${testId}`);
+      return res.json({ totalStudents: 0 });
     }
 
     const stats = aggregateStats[0];
     const passRate = stats.totalStudents === 0 ? 0 : (stats.passCount / stats.totalStudents) * 100;
+
+    console.log(`[Analytics] Success! Found ${stats.totalStudents} participants for Test: ${testId}`);
 
     res.json({
       avgScore: Number((stats.avgScore || 0).toFixed(1)),
@@ -66,7 +75,10 @@ exports.getFailedQuestions = async (req, res) => {
   try {
     const { testId } = req.params;
 
-    const results = await TestResult.find({ testId, status: { $in: ["COMPLETED", "CHEATED"] } }).lean();
+    const results = await TestResult.find({ 
+      $or: [{ testId }, { quizId: testId }],
+      status: { $in: ["COMPLETED", "CHEATED"] } 
+    }).lean();
 
     const questionStats = {};
 
@@ -146,7 +158,10 @@ exports.getFailedQuestions = async (req, res) => {
 exports.getTopPerformers = async (req, res) => {
   try {
     const { testId } = req.params;
-    const results = await TestResult.find({ testId, status: { $in: ["COMPLETED", "CHEATED"] } })
+    const results = await TestResult.find({ 
+      $or: [{ testId }, { quizId: testId }],
+      status: { $in: ["COMPLETED", "CHEATED"] } 
+    })
       .sort({ score: -1 })
       .limit(15) // Fetch slightly more to handle ties within top 10
       .populate("studentId", "firstName lastName email")

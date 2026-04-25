@@ -1,7 +1,7 @@
 const RISK_CONFIG = {
-  HIGH: 9,
-  SUSPICIOUS: 4,
-  MAX_SCORE: 20
+  HIGH: 25,
+  SUSPICIOUS: 10,
+  MAX_SCORE: 100
 };
 
 /**
@@ -13,10 +13,10 @@ const calculateRisk = (result) => {
 
   // Weighted scoring system
   score += (result.tabSwitchCount || 0) * 2;
-  score += (result.multipleFacesDetected ? 5 : 0);
-  score += (result.cameraDisabled ? 5 : 0);
+  score += (result.multipleFacesDetected ? 25 : 0);
+  score += (result.cameraDisabled ? 10 : 0);
   score += (result.lookingAwayCount || 0) * 2;
-  score += (result.noiseDetected ? 1 : 0);
+  score += (result.noiseDetected ? 25 : 0);
 
   // Safety cap to prevent calculation spikes
   score = Math.min(score, RISK_CONFIG.MAX_SCORE);

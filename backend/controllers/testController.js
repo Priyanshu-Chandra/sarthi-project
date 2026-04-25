@@ -17,12 +17,37 @@ const { newTestNotificationEmail } = require("../mail/templates/newTestNotificat
 const DEFAULT_TEST_DURATION_SECONDS = 10 * 60;
 const FINALIZED_TEST_STATUSES = ["COMPLETED", "CHEATED"];
 
+const VIOLATION_WEIGHTS = {
+  COPY: 2, PASTE: 2, RIGHT_CLICK: 2, KEYBOARD_SHORTCUT: 2, FULLSCREEN_EXIT: 2, 
+  TAB_SWITCH: 2, WINDOW_BLUR: 2, DEVTOOLS: 2, LOOKING_AWAY: 2,
+  FACE_MISSING: 10, CAMERA_OBSTRUCTED: 10, CAMERA_DISABLED: 10, FACE_TOO_FAR: 10,
+  MULTIPLE_FACES: 25, MIC_ACTIVITY: 25,
+};
+
 const getTestTimeLimit = (test) => {
   const limit = test?.timeLimitSeconds;
   return Number.isInteger(limit) && limit > 0
     ? limit
     : DEFAULT_TEST_DURATION_SECONDS;
 };
+
+const isMeaningfulFinalizedAttempt = (result) => {
+  if (!FINALIZED_TEST_STATUSES.includes(result?.status)) return false;
+  if (result.status === "CHEATED") return true;
+  if (result.passed === true) return true;
+  if ((result.totalQuestions || 0) > 0) return true;
+  if ((result.timeTakenSeconds || 0) > 0 && (result.studentAnswers?.length || 0) > 0) return true;
+  if ((result.codingSubmissions?.length || 0) > 0) return true;
+  return false;
+};
+
+const isEmptyPreflightAttempt = (result) =>
+  result?.status === "IN_PROGRESS" &&
+  result.startedByStudent !== true &&
+  (result.studentAnswers?.length || 0) === 0 &&
+  (result.codingSubmissions?.length || 0) === 0 &&
+  (result.violationLogs?.length || 0) === 0 &&
+  (result.tabSwitchCount || 0) === 0;
 
 const buildAttemptSession = ({
   testId,
@@ -65,14 +90,19 @@ const shuffleArray = (arr = []) =>
     .map(({ item }) => item);
 
 const buildQuestionSnapshot = (questions = []) =>
-  shuffleArray(questions).map((question) => {
-    const correctOptionValue = question.options[question.correctAnswer];
-    const shuffledOptions = shuffleArray(question.options);
+  shuffleArray(questions).map((q) => {
+    // Handle both legacy (embedded) and new (populated mcqId) formats
+    const questionText = q.mcqId?.question || q.question;
+    const rawOptions = q.mcqId?.options || q.options || [];
+    const correctIdx = q.mcqId?.correctAnswer !== undefined ? q.mcqId.correctAnswer : q.correctAnswer;
+
+    const correctOptionValue = rawOptions[correctIdx];
+    const shuffledOptions = shuffleArray([...rawOptions]);
 
     return {
       // Persist the reference ID (new tests) for fast O(1) topic lookup in analysis
-      mcqId: question.mcqId || null,
-      question: question.question,
+      mcqId: q.mcqId?._id || q.mcqId || null,
+      question: questionText,
       options: shuffledOptions,
       correctAnswer: shuffledOptions.indexOf(correctOptionValue),
     };
@@ -373,28 +403,45 @@ const getTestById = async (req, res) => {
         path: "questions.problemId",
         select: "title difficulty topic description exampleInput exampleOutput constraints starterCode",
       });
+    } else {
+      // For MCQ tests - populate mcqId to get question text and options
+      populatedTest = await Test.findById(testId).populate("questions.mcqId");
     }
 
 
-    // Allow instructor who created the test to view it
-    if (req.user?.accountType === "Instructor") {
-      if (test.createdBy.toString() !== req.user.id) {
+    // Allow instructor who created the test or Admin to view it
+    const isInstructor = req.user?.accountType === "Instructor";
+    const isAdmin = req.user?.accountType === "Admin";
+
+    if (isInstructor || isAdmin) {
+      const isCreator = test.createdBy && test.createdBy.toString() === req.user.id;
+      
+      if (!isCreator && !isAdmin) {
+        console.warn("[GetTestById] Instructor Authorization Failed:", { 
+          userId: req.user.id, 
+          creatorId: test.createdBy,
+          testId: test._id 
+        });
         return res.status(403).json({
           success: false,
           error: "You are not authorized to access this test",
         });
       }
 
-      // Return full test data for instructor (including correct answers)
+      // Return full test data for instructor/admin
       return res.json({
         success: true,
-        test,
-        quiz: test,
+        test: populatedTest,
+        quiz: populatedTest,
       });
     }
 
     // For students — check enrollment
     if (req.user?.accountType !== "Student") {
+      console.warn("[GetTestById] Non-Student Access Denied:", { 
+        userId: req.user.id, 
+        accountType: req.user?.accountType 
+      });
       return res.status(403).json({
         success: false,
         error:
@@ -402,15 +449,24 @@ const getTestById = async (req, res) => {
       });
     }
 
-    const student = await User.findById(req.user.id).select("courses");
-    const isEnrolled = student?.courses?.some(
-      (course) => course.toString() === test.courseId.toString(),
+    const userCourses = await User.findById(req.user.id).select("courses");
+    const isEnrolled = userCourses?.courses?.some(
+      (courseId) => courseId.toString() === test.courseId.toString(),
     );
 
-    if (!isEnrolled) {
+    const course = await Course.findById(test.courseId);
+    const isCourseInstructor = course?.instructor?.toString() === req.user.id;
+
+    if (!isEnrolled && !isCourseInstructor) {
+      console.warn("[GetTestById] Access Denied (Not Enrolled & Not Instructor):", { 
+        userId: req.user.id, 
+        courseId: test.courseId,
+        isEnrolled,
+        isCourseInstructor
+      });
       return res.status(403).json({
         success: false,
-        error: "You are not authorized to access this test",
+        error: "You are not authorized to access this test. Please enroll in the course first.",
       });
     }
 
@@ -421,8 +477,24 @@ const getTestById = async (req, res) => {
       .populate("codingSubmissions.problemId", "title difficulty")
       .sort({ attemptNumber: -1 });
 
+    if (isEmptyPreflightAttempt(existingResult)) {
+      existingResult.status = "COMPLETED";
+      existingResult.timeTakenSeconds = 0;
+      existingResult.totalQuestions = 0;
+      existingResult.lastAttemptSessionToken = "";
+      await existingResult.save();
+      existingResult = null;
+    }
+
     const maxAttempts = test.maxAttempts || 2;
     const timeLimitSecs = getTestTimeLimit(test);
+    const finalizedAttempts = await TestResult.find({
+      studentId: req.user.id,
+      $or: [{ testId: test._id }, { quizId: test._id }],
+      status: { $in: FINALIZED_TEST_STATUSES },
+    }).select("status passed totalQuestions timeTakenSeconds studentAnswers codingSubmissions attemptNumber questionSnapshot");
+    let meaningfulFinalizedAttempts = finalizedAttempts.filter(isMeaningfulFinalizedAttempt);
+    let hasPassedAttempt = meaningfulFinalizedAttempts.some((result) => result.passed === true);
 
     // Close abandoned attempt
     if (existingResult?.status === "IN_PROGRESS" && existingResult.startedAt) {
@@ -436,35 +508,48 @@ const getTestById = async (req, res) => {
         existingResult.suspicious = false;
         existingResult.eligibleForCertificate = false;
         existingResult.timeTakenSeconds = elapsed;
+        existingResult.totalQuestions =
+          existingResult.totalQuestions ||
+          (isCoding
+            ? populatedTest.questions?.length || 0
+            : existingResult.questionSnapshot?.length || populatedTest.questions?.length || 0);
         await existingResult.save();
+
+        const alreadyTracked = meaningfulFinalizedAttempts.some(
+          (attempt) => attempt._id?.toString() === existingResult._id.toString(),
+        );
+        if (isMeaningfulFinalizedAttempt(existingResult) && !alreadyTracked) {
+          meaningfulFinalizedAttempts = [...meaningfulFinalizedAttempts, existingResult];
+          hasPassedAttempt = meaningfulFinalizedAttempts.some((result) => result.passed === true);
+        }
       }
     }
 
-    if (FINALIZED_TEST_STATUSES.includes(existingResult?.status)) {
-      if (
-        existingResult.passed ||
-        existingResult.attemptNumber >= maxAttempts
-      ) {
+    if (hasPassedAttempt || meaningfulFinalizedAttempts.length >= maxAttempts) {
+      const previousCandidate =
+        meaningfulFinalizedAttempts.sort((a, b) => (b.attemptNumber || 0) - (a.attemptNumber || 0))[0] ||
+        existingResult;
+      const previousResult = previousCandidate?._id
+        ? await TestResult.findById(previousCandidate._id).populate("codingSubmissions.problemId", "title difficulty")
+        : previousCandidate;
+      if (previousResult) {
         const testPayload = buildTestPayload(
           populatedTest,
           isCoding
             ? populatedTest.questions
-            : existingResult.questionSnapshot?.length
-            ? existingResult.questionSnapshot
+            : previousResult.questionSnapshot?.length
+            ? previousResult.questionSnapshot
             : populatedTest.questions,
         );
         return res.json({
           success: true,
           canAttempt: false,
-          previousResult: existingResult,
+          previousResult,
           test: testPayload,
           quiz: testPayload,
         });
       }
     }
-
-    let startTime;
-    let attemptSessionToken;
 
     if (existingResult?.status === "IN_PROGRESS") {
       if (existingResult.deviceId && existingResult.deviceId !== deviceId) {
@@ -479,17 +564,17 @@ const getTestById = async (req, res) => {
         await existingResult.save();
       }
 
-      if (!existingResult.questionSnapshot?.length) {
+      if (!isCoding && !existingResult.questionSnapshot?.length) {
         return res.status(409).json({
           success: false,
           message: "Active attempt snapshot missing",
         });
       }
 
-      startTime = existingResult.startedAt
+      const startTime = existingResult.startedAt
         ? new Date(existingResult.startedAt).getTime()
         : Date.now();
-      attemptSessionToken = existingResult.lastAttemptSessionToken;
+      let attemptSessionToken = existingResult.lastAttemptSessionToken;
 
       if (!attemptSessionToken) {
         const session = buildAttemptSession({
@@ -512,6 +597,7 @@ const getTestById = async (req, res) => {
       return res.json({
         success: true,
         canAttempt: true,
+        activeAttempt: true,
         test: testPayload,
         quiz: testPayload,
         attemptSessionToken,
@@ -519,51 +605,287 @@ const getTestById = async (req, res) => {
         allowedTimeSeconds: timeLimitSecs,
         codingSubmissions: existingResult.codingSubmissions || [],
       });
-    } else {
-      startTime = Date.now();
-      const session = buildAttemptSession({
-        testId: test._id,
-        userId: req.user.id,
-        deviceId,
-        timeLimitSeconds: timeLimitSecs,
-        startTime,
-      });
-      attemptSessionToken = session.attemptSessionToken;
-      // For CODING tests skip the question snapshot shuffle — problems are resolved via populate
-      const questionSnapshot = isCoding ? [] : buildQuestionSnapshot(test.questions);
-
-      existingResult = await TestResult.create({
-        testId: test._id,
-        quizId: test._id,
-        studentId: req.user.id,
-        status: "IN_PROGRESS",
-        startedAt: startTime,
-        timeLimitSeconds: timeLimitSecs, // Cache for code run/submit expiry checks
-        lastAttemptSessionToken: attemptSessionToken,
-        deviceId,
-        attemptNumber: existingResult?.attemptNumber
-          ? existingResult.attemptNumber + 1
-          : 1,
-        questionSnapshot,
-      });
     }
 
-    // CODING: return populated problem data; MCQ: return shuffled snapshot
+    // Fresh attempts start only after the student completes the pre-flight checks.
     const testPayload = isCoding
       ? buildTestPayload(populatedTest, populatedTest.questions)
-      : buildTestPayload(test, existingResult.questionSnapshot);
+      : buildTestPayload(populatedTest, populatedTest.questions);
 
     return res.json({
       success: true,
       canAttempt: true,
+      activeAttempt: false,
       test: testPayload,
       quiz: testPayload,
-      attemptSessionToken,
-      startTime,
       allowedTimeSeconds: timeLimitSecs,
     });
   } catch (error) {
     console.error("GET TEST BY ID ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+const startTestAttempt = async (req, res) => {
+  try {
+    const testId = req.params.id || req.body?.testId || req.body?.quizId;
+    const deviceId =
+      typeof req.body?.deviceId === "string" ? req.body.deviceId.trim() : "";
+
+    const test = await Test.findById(testId);
+
+    if (!test) {
+      return res.status(404).json({
+        success: false,
+        error: "Test not found",
+      });
+    }
+
+    if (req.user?.accountType !== "Student") {
+      return res.status(403).json({
+        success: false,
+        error: "Only enrolled students can start this test",
+      });
+    }
+
+    const userCourses = await User.findById(req.user.id).select("courses");
+    const isEnrolled = userCourses?.courses?.some(
+      (courseId) => courseId.toString() === test.courseId.toString(),
+    );
+
+    if (!isEnrolled) {
+      return res.status(403).json({
+        success: false,
+        error: "You are not authorized to access this test. Please enroll in the course first.",
+      });
+    }
+
+    let existingResult = await TestResult.findOne({
+      studentId: req.user.id,
+      $or: [{ testId: test._id }, { quizId: test._id }],
+    }).sort({ attemptNumber: -1 });
+
+    if (isEmptyPreflightAttempt(existingResult)) {
+      existingResult.status = "COMPLETED";
+      existingResult.timeTakenSeconds = 0;
+      existingResult.totalQuestions = 0;
+      existingResult.lastAttemptSessionToken = "";
+      await existingResult.save();
+      existingResult = null;
+    }
+
+    const maxAttempts = test.maxAttempts || 2;
+    const timeLimitSecs = getTestTimeLimit(test);
+    const isCoding = test.testType === "CODING";
+
+    if (existingResult?.status === "IN_PROGRESS" && existingResult.startedAt) {
+      const elapsed = Math.floor(
+        (Date.now() - new Date(existingResult.startedAt).getTime()) / 1000,
+      );
+      if (elapsed > timeLimitSecs + 60) {
+        existingResult.status = "COMPLETED";
+        existingResult.score = 0;
+        existingResult.passed = false;
+        existingResult.suspicious = false;
+        existingResult.eligibleForCertificate = false;
+        existingResult.timeTakenSeconds = elapsed;
+        existingResult.totalQuestions =
+          existingResult.totalQuestions ||
+          (isCoding ? test.questions?.length || 0 : existingResult.questionSnapshot?.length || test.questions?.length || 0);
+        existingResult.startedByStudent = true;
+        await existingResult.save();
+        existingResult = null;
+      }
+    }
+
+    const finalizedAttempts = await TestResult.find({
+      studentId: req.user.id,
+      $or: [{ testId: test._id }, { quizId: test._id }],
+      status: { $in: FINALIZED_TEST_STATUSES },
+    }).select("status passed totalQuestions timeTakenSeconds studentAnswers codingSubmissions attemptNumber");
+    const meaningfulFinalizedAttempts = finalizedAttempts.filter(isMeaningfulFinalizedAttempt);
+    const hasPassedAttempt = meaningfulFinalizedAttempts.some((result) => result.passed === true);
+    const latestMeaningfulAttempt = meaningfulFinalizedAttempts
+      .sort((a, b) => (b.attemptNumber || 0) - (a.attemptNumber || 0))[0];
+    const blockedPreviousResult = latestMeaningfulAttempt?._id
+      ? await TestResult.findById(latestMeaningfulAttempt._id).populate("codingSubmissions.problemId", "title difficulty")
+      : null;
+
+    if (hasPassedAttempt) {
+      return res.status(409).json({
+        success: false,
+        canAttempt: false,
+        reason: "PASSED",
+        message: "Test already passed",
+        previousResult: blockedPreviousResult,
+      });
+    }
+
+    if (meaningfulFinalizedAttempts.length >= maxAttempts) {
+      return res.status(409).json({
+        success: false,
+        canAttempt: false,
+        reason: "MAX_ATTEMPTS",
+        message: "You have reached maximum attempts",
+        previousResult: blockedPreviousResult,
+      });
+    }
+
+    if (existingResult?.status === "IN_PROGRESS") {
+      if (existingResult.deviceId && existingResult.deviceId !== deviceId) {
+        return res.status(403).json({
+          success: false,
+          message: "Exam already active on another device",
+        });
+      }
+
+      if (existingResult.startedByStudent !== true) {
+        existingResult.startedByStudent = true;
+        await existingResult.save();
+      }
+
+      const resumedStartTime = existingResult.startedAt
+        ? new Date(existingResult.startedAt).getTime()
+        : Date.now();
+
+      if (!existingResult.lastAttemptSessionToken) {
+        const session = buildAttemptSession({
+          testId: test._id,
+          userId: req.user.id,
+          deviceId: existingResult.deviceId || deviceId,
+          timeLimitSeconds: timeLimitSecs,
+          startTime: resumedStartTime,
+        });
+        existingResult.lastAttemptSessionToken = session.attemptSessionToken;
+        existingResult.deviceId = existingResult.deviceId || deviceId;
+        await existingResult.save();
+      }
+
+      const populatedTest = isCoding
+        ? await Test.findById(testId).populate({
+            path: "questions.problemId",
+            select: "title difficulty topic description exampleInput exampleOutput constraints starterCode",
+          })
+        : test;
+
+      const testPayload = isCoding
+        ? buildTestPayload(populatedTest, populatedTest.questions)
+        : buildTestPayload(test, existingResult.questionSnapshot);
+
+      return res.json({
+        success: true,
+        activeAttempt: true,
+        test: testPayload,
+        quiz: testPayload,
+        attemptSessionToken: existingResult.lastAttemptSessionToken,
+        startTime: resumedStartTime,
+        allowedTimeSeconds: timeLimitSecs,
+      });
+    }
+
+    let populatedTest = test;
+    if (isCoding) {
+      populatedTest = await Test.findById(testId).populate({
+        path: "questions.problemId",
+        select: "title difficulty topic description exampleInput exampleOutput constraints starterCode",
+      });
+    } else {
+      populatedTest = await Test.findById(testId).populate("questions.mcqId");
+    }
+
+    const startTime = Date.now();
+    const session = buildAttemptSession({
+      testId: test._id,
+      userId: req.user.id,
+      deviceId,
+      timeLimitSeconds: timeLimitSecs,
+      startTime,
+    });
+
+    const questionSnapshot = isCoding
+      ? []
+      : buildQuestionSnapshot(populatedTest.questions);
+
+    const nextAttemptNumber = meaningfulFinalizedAttempts.length + 1;
+
+    await TestResult.create({
+      testId: test._id,
+      quizId: test._id,
+      studentId: req.user.id,
+      status: "IN_PROGRESS",
+      startedAt: startTime,
+      timeLimitSeconds: timeLimitSecs,
+      lastAttemptSessionToken: session.attemptSessionToken,
+      deviceId,
+      startedByStudent: true,
+      attemptNumber: nextAttemptNumber,
+      questionSnapshot,
+    });
+
+    const testPayload = isCoding
+      ? buildTestPayload(populatedTest, populatedTest.questions)
+      : buildTestPayload(test, questionSnapshot);
+
+    return res.json({
+      success: true,
+      activeAttempt: true,
+      test: testPayload,
+      quiz: testPayload,
+      attemptSessionToken: session.attemptSessionToken,
+      startTime,
+      allowedTimeSeconds: timeLimitSecs,
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      const activeAttempt = await TestResult.findOne({
+        studentId: req.user.id,
+        $or: [{ testId: req.params.id }, { quizId: req.params.id }],
+        status: "IN_PROGRESS",
+      }).sort({ attemptNumber: -1 });
+
+      if (activeAttempt) {
+        if (activeAttempt.deviceId && activeAttempt.deviceId !== req.body?.deviceId?.trim?.()) {
+          return res.status(403).json({
+            success: false,
+            message: "Exam already active on another device",
+          });
+        }
+
+        const activeTest = await Test.findById(req.params.id);
+        const isCoding = activeTest?.testType === "CODING";
+        const populatedTest = isCoding
+          ? await Test.findById(req.params.id).populate({
+              path: "questions.problemId",
+              select: "title difficulty topic description exampleInput exampleOutput constraints starterCode",
+            })
+          : activeTest;
+        const testPayload = populatedTest
+          ? isCoding
+            ? buildTestPayload(populatedTest, populatedTest.questions)
+            : buildTestPayload(populatedTest, activeAttempt.questionSnapshot)
+          : null;
+
+        return res.json({
+          success: true,
+          activeAttempt: true,
+          ...(testPayload ? { test: testPayload, quiz: testPayload } : {}),
+          attemptSessionToken: activeAttempt.lastAttemptSessionToken,
+          startTime: activeAttempt.startedAt
+            ? new Date(activeAttempt.startedAt).getTime()
+            : Date.now(),
+          allowedTimeSeconds:
+            activeAttempt.timeLimitSeconds > 0
+              ? activeAttempt.timeLimitSeconds
+              : DEFAULT_TEST_DURATION_SECONDS,
+        });
+      }
+    }
+
+    console.error("START TEST ATTEMPT ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -716,13 +1038,14 @@ const submitTest = async (req, res) => {
       testId,
       answers,
       tabSwitchCount,
+      integrityScore,
+      violationLogs,
       attemptSessionToken,
       deviceId,
-    } =
-      req.body;
+    } = req.body;
+    
     const effectiveTestId = testId || quizId;
-    const normalizedDeviceId =
-      typeof deviceId === "string" ? deviceId.trim() : "";
+    const normalizedDeviceId = typeof deviceId === "string" ? deviceId.trim() : "";
 
     if (!attemptSessionToken) {
       return res.status(400).json({
@@ -730,6 +1053,29 @@ const submitTest = async (req, res) => {
         message: "Attempt session missing",
       });
     }
+
+    const normalizedTabSwitchCount =
+      typeof tabSwitchCount === "number" && tabSwitchCount >= 0
+        ? tabSwitchCount
+        : 0;
+
+    const normalizedIntegrityScore =
+      typeof integrityScore === "number" ? Math.max(0, Math.min(100, integrityScore)) : 100;
+    
+    const effectiveIntegrity = normalizedIntegrityScore;
+
+    const safeLogs = Array.isArray(violationLogs)
+      ? violationLogs
+          .filter((entry) => entry && typeof entry.type === "string")
+          .map((entry) => ({
+            type: entry.type,
+            timestamp: entry.timestamp || entry.time || new Date().toISOString(),
+            weight:
+              typeof entry.weight === "number"
+                ? entry.weight
+                : VIOLATION_WEIGHTS[entry.type] || 0,
+          }))
+      : [];
 
     let verifiedAttemptSession;
 
@@ -760,6 +1106,12 @@ const submitTest = async (req, res) => {
       verifiedAttemptSession?.userId !== req.user.id ||
       verifiedAttemptSession?.testId !== effectiveTestId.toString()
     ) {
+      console.warn("[SubmitTest] Session Mismatch:", { 
+        sessionUser: verifiedAttemptSession?.userId, 
+        reqUser: req.user.id, 
+        sessionTest: verifiedAttemptSession?.testId, 
+        reqTest: effectiveTestId.toString() 
+      });
       return res.status(403).json({
         success: false,
         message: "Invalid attempt session",
@@ -767,6 +1119,10 @@ const submitTest = async (req, res) => {
     }
 
     if (verifiedAttemptSession?.deviceId !== normalizedDeviceId) {
+      console.warn("[SubmitTest] Device Mismatch:", { 
+        sessionDevice: verifiedAttemptSession?.deviceId, 
+        reqDevice: normalizedDeviceId 
+      });
       return res.status(403).json({
         success: false,
         message: "Invalid exam session",
@@ -824,11 +1180,6 @@ const submitTest = async (req, res) => {
       });
     }
 
-    const normalizedTabSwitchCount =
-      typeof tabSwitchCount === "number" && tabSwitchCount >= 0
-        ? tabSwitchCount
-        : 0;
-
     // Sanity-check: flag as suspicious if tab switches are implausibly high
     // relative to time spent (more than 1 switch per 30 seconds + buffer is unrealistic)
     const maxPlausibleTabSwitches = Math.ceil(timeTaken / 30) + 2;
@@ -860,8 +1211,8 @@ const submitTest = async (req, res) => {
 
     const activeQuestions = existingAttempt.questionSnapshot || [];
     let totalQuestions = activeQuestions.length;
-
-    if (timeTaken > allowedTimeSeconds) {
+    const NETWORK_LATENCY_BUFFER = 60; // 60-second grace period for network delays
+    if (timeTaken > allowedTimeSeconds + NETWORK_LATENCY_BUFFER) {
       const result = await TestResult.findOneAndUpdate(
         {
           studentId: req.user.id,
@@ -878,7 +1229,9 @@ const submitTest = async (req, res) => {
             deviceId: existingAttempt.deviceId || normalizedDeviceId,
             attemptNumber: existingAttempt.attemptNumber,
             tabSwitchCount: normalizedTabSwitchCount,
-            suspicious: false,
+            integrityScore: effectiveIntegrity,
+            violationLogs: Array.isArray(violationLogs) ? violationLogs : [],
+            suspicious: effectiveIntegrity < 65,
             passed: false,
             eligibleForCertificate: false,
             studentAnswers: [],
@@ -917,6 +1270,7 @@ const submitTest = async (req, res) => {
         allowedTimeSeconds,
         attemptNumber: result.attemptNumber,
         tabSwitchCount: result.tabSwitchCount,
+        integrityScore: result.integrityScore,
         suspicious: result.suspicious,
         eligibleForCertificate: false,
         total: totalQuestions,
@@ -942,6 +1296,8 @@ const submitTest = async (req, res) => {
             deviceId: existingAttempt.deviceId || normalizedDeviceId,
             attemptNumber: existingAttempt.attemptNumber,
             tabSwitchCount: normalizedTabSwitchCount,
+            integrityScore: effectiveIntegrity,
+            violationLogs: Array.isArray(violationLogs) ? violationLogs : [],
             suspicious: true,
             passed: false,
             eligibleForCertificate: false,
@@ -981,6 +1337,7 @@ const submitTest = async (req, res) => {
         allowedTimeSeconds,
         attemptNumber: result.attemptNumber,
         tabSwitchCount: result.tabSwitchCount,
+        integrityScore: result.integrityScore,
         suspicious: true,
         eligibleForCertificate: false,
         total: totalQuestions,
@@ -1059,10 +1416,62 @@ const submitTest = async (req, res) => {
       percentage = totalQuestions > 0 ? (score / totalQuestions) * 100 : 0;
     }
 
-    const passed = percentage >= (test.passingScore || 50); // Default 50% if not set
-    const eligibleForCertificate = passed === true;
-    const suspicious = isImplausiblyHigh || normalizedTabSwitchCount > 3;
+    const passed = percentage >= (test.passingScore || 50); 
 
+    // Server-Side Reality Check on Time
+    // Realistic Timing Check: Question Density Audit (Item 3)
+    // If student averages less than 3 seconds per question, it's implausibly fast
+    const minRealisticTime = totalQuestions * 3; 
+    const isImplausiblyFast = (timeTaken < minRealisticTime && totalQuestions > 3);
+    const isImplausiblyLate = (timeTaken > allowedTimeSeconds + 300); // 5 minute hard grace
+
+    // NEW: TIER 1 Backend Zero-Trust Log Scanner & Integrity Audit
+    // safeLogs is already declared at the top during normalization
+    
+    // Independent flags derived solely from forensic logs
+    let multipleFacesDetected = false;
+    let cameraDisabled = false;
+    let noiseDetected = false;
+    let lookingAwayCount = 0;
+
+    const recomputedPenalty = safeLogs.reduce((acc, v) => {
+      // Logic fix: Ignore unknown types to avoid penalty-bypass via fake types (Item 5)
+      if (!VIOLATION_WEIGHTS[v.type]) return acc;
+
+      // 1. Re-calculate Integrity Score
+      const weight = VIOLATION_WEIGHTS[v.type];
+      
+      // 2. Derive authoritative status flags from logs (Zero-Trust)
+      if (v.type === "MULTIPLE_FACES") multipleFacesDetected = true;
+      if (v.type === "CAMERA_DISABLED" || v.type === "CAMERA_OBSTRUCTED") cameraDisabled = true;
+      if (v.type === "MIC_ACTIVITY") noiseDetected = true;
+      if (v.type === "LOOKING_AWAY") lookingAwayCount++;
+
+      return acc + weight;
+    }, 0);
+
+    const serverCalculatedIntegrity = Math.max(0, 100 - recomputedPenalty);
+    
+    // Log-Wipe Detection: If client reports many tab switches but NO logs are provided
+    const isLogWipeDetected = (normalizedTabSwitchCount > 0 && safeLogs.length === 0);
+    
+    // Logic fix: Unify inconsistent variable names (Item 2)
+    let finalIntegrity = Math.min(normalizedIntegrityScore, serverCalculatedIntegrity);
+
+    // Hard Link: Force integrity floor if camera was disabled (Item 6)
+    if (cameraDisabled) {
+      finalIntegrity = Math.min(finalIntegrity, 50);
+    }
+
+    const suspicious = isImplausiblyHigh || 
+                       normalizedTabSwitchCount > 5 || 
+                       finalIntegrity < 65 || 
+                       isImplausiblyFast || 
+                       isImplausiblyLate ||
+                       isLogWipeDetected;
+
+    // Align eligibility lock with security status (Item 8)
+    const eligibleForCertificate = passed === true && !suspicious;
 
     const result = await TestResult.findOneAndUpdate(
       {
@@ -1080,6 +1489,12 @@ const submitTest = async (req, res) => {
           deviceId: existingAttempt.deviceId || normalizedDeviceId,
           attemptNumber: existingAttempt.attemptNumber,
           tabSwitchCount: normalizedTabSwitchCount,
+          integrityScore: finalIntegrity,
+          violationLogs: safeLogs,
+          multipleFacesDetected,
+          cameraDisabled,
+          noiseDetected,
+          lookingAwayCount,
           suspicious,
           passed,
           eligibleForCertificate,
@@ -1119,6 +1534,7 @@ const submitTest = async (req, res) => {
       allowedTimeSeconds,
       attemptNumber: result.attemptNumber,
       tabSwitchCount: result.tabSwitchCount,
+      integrityScore: result.integrityScore,
       suspicious: result.suspicious,
       eligibleForCertificate,
       total: totalQuestions,
@@ -1259,6 +1675,7 @@ module.exports = {
   createTest,
   getTestsByCourse,
   getTestById,
+  startTestAttempt,
   generateAITest,
   submitTest,
   deleteTest,
@@ -1268,6 +1685,7 @@ module.exports = {
 
   createQuiz: createTest,
   getQuizById: getTestById,
+  startQuizAttempt: startTestAttempt,
   generateAIQuiz: generateAITest,
   submitQuiz: submitTest,
   deleteQuiz: deleteTest,

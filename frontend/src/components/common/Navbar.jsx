@@ -11,6 +11,7 @@ import MobileProfileDropDown from '../core/Auth/MobileProfileDropDown'
 
 import { AiOutlineShoppingCart } from "react-icons/ai"
 import { MdKeyboardArrowDown } from "react-icons/md"
+import { getUserEnrolledCourses } from './../../services/operations/profileAPI';
 
 
 
@@ -25,6 +26,7 @@ const Navbar = () => {
 
     const [subLinks, setSubLinks] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [isAnyCourseLive, setIsAnyCourseLive] = useState(false);
 
 
     const fetchSublinks = async () => {
@@ -48,6 +50,39 @@ const Navbar = () => {
     useEffect(() => {
         fetchSublinks();
     }, [])
+
+    useEffect(() => {
+        let interval;
+        const checkLiveStatus = async () => {
+            // Only poll if tab is active, token exists, and user is a student
+            if (document.visibilityState === "visible" && token && user?.accountType === "Student") {
+                try {
+                    const enrolledCourses = await getUserEnrolledCourses(token);
+                    if (enrolledCourses?.length) {
+                        const isLive = enrolledCourses.some(course => course.isLive);
+                        setIsAnyCourseLive(isLive);
+                    }
+                } catch (err) {
+                    console.error("Live status check failed:", err);
+                }
+            }
+        };
+        
+        checkLiveStatus();
+        // Check every 2 minutes
+        interval = setInterval(checkLiveStatus, 120000);
+
+        const handleVisibility = () => {
+            if (document.visibilityState === "visible") checkLiveStatus();
+        };
+
+        document.addEventListener("visibilitychange", handleVisibility);
+        
+        return () => {
+            if (interval) clearInterval(interval);
+            document.removeEventListener("visibilitychange", handleVisibility);
+        };
+    }, [token, user?.accountType])
 
 
     // when user click Navbar link then it will hold yellow color
@@ -152,14 +187,26 @@ const Navbar = () => {
                 <div className='flex gap-x-4 items-center'>
                     {
                         user && user?.accountType === "Student" && (
-                            <Link to="/dashboard/cart" className="relative">
-                                <AiOutlineShoppingCart className="text-[2.35rem] text-richblack-5 hover:bg-richblack-700 rounded-full p-2 duration-200" />
-                                {totalItems > 0 && (
-                                    <span className="absolute -bottom-2 -right-2 grid h-5 w-5 place-items-center overflow-hidden rounded-full bg-richblack-600 text-center text-xs font-bold text-yellow-100">
-                                        {totalItems}
-                                    </span>
+                            <div className="flex items-center gap-4">
+                                {isAnyCourseLive && (
+                                    <Link 
+                                        to="/dashboard/enrolled-courses" 
+                                        className="flex items-center gap-2 group"
+                                        title="You have a live session in progress!"
+                                    >
+                                        <span className="flex h-3 w-3 rounded-full bg-pink-500 animate-pulse"></span>
+                                        <span className="hidden lg:block text-xs font-bold text-pink-100 uppercase tracking-widest group-hover:text-pink-50 duration-200">Live Now</span>
+                                    </Link>
                                 )}
-                            </Link>
+                                <Link to="/dashboard/cart" className="relative">
+                                    <AiOutlineShoppingCart className="text-[2.35rem] text-richblack-5 hover:bg-richblack-700 rounded-full p-2 duration-200" />
+                                    {totalItems > 0 && (
+                                        <span className="absolute -bottom-2 -right-2 grid h-5 w-5 place-items-center overflow-hidden rounded-full bg-richblack-600 text-center text-xs font-bold text-yellow-100">
+                                            {totalItems}
+                                        </span>
+                                    )}
+                                </Link>
+                            </div>
                         )
                     }
                     {

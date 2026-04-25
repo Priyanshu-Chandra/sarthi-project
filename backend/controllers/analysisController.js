@@ -52,10 +52,14 @@ exports.computeTestAnalysis = async (testId, userId) => {
   const result = await TestResult.findOne({
     testId,
     studentId: userId,
-    status: "COMPLETED",
+    status: { $ne: "IN_PROGRESS" },
   }).sort({ createdAt: -1 });
 
-  if (!result) return null;
+  if (!result) {
+    const activeResult = await TestResult.findOne({ testId, studentId: userId, status: "IN_PROGRESS" });
+    if (activeResult) return { status: "IN_PROGRESS" };
+    return null;
+  }
 
   const test = await Test.findById(testId);
   if (!test) return null;
@@ -183,13 +187,18 @@ exports.computeTestAnalysis = async (testId, userId) => {
     recommendations,
     performanceTier,
     percentage,
+    score: result.score || 0,
+    totalQuestions: result.totalQuestions || 0,
+    timeTakenSeconds: result.timeTakenSeconds || 0,
     cheatingSummary: {
       tabSwitchCount: result.tabSwitchCount || 0,
+      integrityScore: result.integrityScore || 100,
       multipleFacesDetected: result.multipleFacesDetected || false,
       cameraDisabled: result.cameraDisabled || false,
       lookingAwayCount: result.lookingAwayCount || 0,
       noiseDetected: result.noiseDetected || false,
       suspicious: result.suspicious || false,
+      violationLogs: result.violationLogs || [],
     }
   };
 };
@@ -206,7 +215,14 @@ exports.getPostTestAnalysis = async (req, res) => {
     const analysisData = await exports.computeTestAnalysis(testId, userId);
 
     if (!analysisData) {
-      return res.status(404).json({ success: false, message: "Analysis not found" });
+      return res.status(404).json({ success: false, message: "No completed or terminated attempts found for this test." });
+    }
+
+    if (analysisData.status === "IN_PROGRESS") {
+      return res.status(200).json({ 
+        success: true, 
+        data: { is_active: true, message: "Attempt still in progress. Please submit the test to view analysis." } 
+      });
     }
 
     return res.status(200).json({

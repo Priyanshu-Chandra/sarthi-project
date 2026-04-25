@@ -87,7 +87,7 @@ export default function VideoDetailsSidebar({ setReviewModal }) {
     !hasCertificateEligibility
       ? "Checking certificate status..."
       : certificateEligibility.reason === "CHEATING_DETECTED"
-      ? "Certificate denied due to suspicious activity"
+      ? "Certificate permanently blocked: Security violations detected during assessment."
       : "Complete all tests to unlock certificate"
 
 

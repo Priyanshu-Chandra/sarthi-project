@@ -1,12 +1,15 @@
-import { useEffect, useRef } from "react";
-import { FaceDetection } from "@mediapipe/face_detection";
+import { useEffect, useRef, useState } from "react";
+import * as FaceDetectionModule from "@mediapipe/face_detection";
 
 export default function useFaceMonitor({
-  videoRef,
+  videoElement,
   isEnabled,
   emitViolation,
   emitWarning,
 }) {
+  const [faceDetected, setFaceDetected] = useState(false);
+  const [isCentered, setIsCentered] = useState(true);
+
   const detectorRef = useRef(null);
   const canvasRef = useRef(null);
   const intervalRef = useRef(null);
@@ -28,15 +31,27 @@ export default function useFaceMonitor({
       }
 
       canvasRef.current = null;
+      setFaceDetected(false);
+      setIsCentered(true);
     };
 
     const startDetection = async () => {
-      if (!isEnabled || !videoRef?.current || !emitViolation || !emitWarning) {
+      if (!isEnabled || !videoElement || !emitViolation || !emitWarning) {
         return;
       }
 
       if (!detectorRef.current) {
-        const detector = new FaceDetection({
+        const FaceDetectionCtor =
+          FaceDetectionModule.FaceDetection ||
+          FaceDetectionModule.default ||
+          window.FaceDetection;
+
+        if (!FaceDetectionCtor) {
+          console.error("MediaPipe FaceDetection constructor unavailable.");
+          return;
+        }
+
+        const detector = new FaceDetectionCtor({
           locateFile: (file) =>
             `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`,
         });
@@ -48,10 +63,12 @@ export default function useFaceMonitor({
 
         detector.onResults((results) => {
           const faces = results?.detections || [];
-          const faceDetected = faces.length > 0;
+          const currentFaceDetected = faces.length > 0;
           const multipleFaces = faces.length > 1;
 
-          faceHistoryRef.current.push(faceDetected);
+          setFaceDetected(currentFaceDetected);
+
+          faceHistoryRef.current.push(currentFaceDetected);
           if (faceHistoryRef.current.length > HISTORY_SIZE) {
             faceHistoryRef.current.shift();
           }
@@ -66,7 +83,9 @@ export default function useFaceMonitor({
             const box = faces[0].boundingBox;
             const faceTooFar = box.width < 0.1 || box.height < 0.12;
             const faceCenterX = box.xmin + box.width / 2;
-            const isCentered = faceCenterX > 0.25 && faceCenterX < 0.75;
+            const currentCentered = faceCenterX > 0.25 && faceCenterX < 0.75;
+            
+            setIsCentered(currentCentered);
 
             if (!faceTooFar) {
               lastFaceLargeEnoughRef.current = Date.now();
@@ -78,11 +97,14 @@ export default function useFaceMonitor({
               }
             }
 
-            if (isCentered) {
+            if (currentCentered) {
               lastCenteredRef.current = Date.now();
             } else if (Date.now() - lastCenteredRef.current > 5000) {
               emitWarning("LOOKING_AWAY");
             }
+          }
+          else if (faces.length === 0) {
+             setIsCentered(false);
           }
 
           const noFaceConsistent =
@@ -130,14 +152,18 @@ export default function useFaceMonitor({
       multipleFaceHistoryRef.current = [];
 
       intervalRef.current = window.setInterval(async () => {
-        const video = videoRef?.current;
+        const video = videoElement;
 
         if (
           isCancelled ||
           !video ||
           video.readyState < 2 ||
-          video.videoWidth === 0
+          video.videoWidth === 0 ||
+          !isEnabled
         ) {
+          setFaceDetected(false);
+          faceHistoryRef.current = [];
+          multipleFaceHistoryRef.current = [];
           return;
         }
 
@@ -178,7 +204,7 @@ export default function useFaceMonitor({
         } catch (error) {
           console.error("Face detection failed:", error);
         }
-      }, 1500);
+      }, 750);
     };
 
     if (isEnabled) {
@@ -191,5 +217,7 @@ export default function useFaceMonitor({
       isCancelled = true;
       stopDetection();
     };
-  }, [emitViolation, emitWarning, isEnabled, videoRef]);
+  }, [emitViolation, emitWarning, isEnabled, videoElement]);
+
+  return { faceDetected, isCentered };
 }

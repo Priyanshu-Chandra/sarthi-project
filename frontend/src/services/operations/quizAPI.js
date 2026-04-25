@@ -103,6 +103,25 @@ export const fetchQuizById = async ({ quizId, deviceId }, token) => {
 
 }
 
+export const startQuizAttempt = async ({ quizId, deviceId }, token) => {
+  try {
+    const response = await apiConnector(
+      "POST",
+      `${GET_QUIZ_BY_ID_API}/${quizId}/start`,
+      { deviceId },
+      {
+        Authorization: `Bearer ${token}`
+      }
+    )
+
+    return response.data
+
+  } catch (error) {
+    console.log("QUIZ START ERROR", error)
+    throw error
+  }
+}
+
 
 
 // Submit quiz

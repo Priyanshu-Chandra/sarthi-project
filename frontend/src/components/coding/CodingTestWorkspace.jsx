@@ -70,7 +70,7 @@ export default function CodingTestWorkspace({
             : existing?.status
             ? "attempted"
             : "unattempted",
-        code: "",
+        code: existing?.code ?? "",
       };
     });
     setProblemStates(initialState);
@@ -228,15 +228,15 @@ export default function CodingTestWorkspace({
             >
               {isLeftPanelOpen ? "<<" : ">"}
             </button>
-            <div className="flex items-center gap-2 p-1 bg-richblack-900/50 rounded-lg border border-richblack-700 font-mono text-[10px] uppercase font-black text-richblack-400">
-               Coding Test
+            <div className="flex items-center gap-2 p-1 px-2 bg-richblack-900/50 rounded-lg border border-richblack-700 font-mono text-[10px] font-bold text-richblack-400">
+               Coding test
             </div>
           </div>
 
           <div className={`flex min-w-[120px] flex-col items-center font-mono font-bold ${timerColor} ${isLow ? "animate-pulse" : ""}`}>
             <span className="text-xl tracking-widest md:text-2xl">{formatTime(timeLeft)}</span>
-            <span className="text-[10px] font-normal opacity-70 mt-0.5">
-              {isLow ? "⚠ TIME ALMOST UP" : "Time Remaining"}
+            <span className="text-[10px] font-medium opacity-70 mt-0.5">
+              {isLow ? "⚠ Time almost up" : "Time remaining"}
             </span>
           </div>
 
@@ -264,7 +264,7 @@ export default function CodingTestWorkspace({
           <>
             {/* Navigation Sidebar */}
             <Panel defaultSize={20} minSize={15} className="bg-richblack-800 border-r border-richblack-700 flex flex-col p-4 overflow-y-auto hidden md:flex">
-              <p className="text-richblack-400 text-[10px] font-bold uppercase mb-4 tracking-widest">Questions</p>
+              <p className="text-richblack-400 text-[10px] font-bold tracking-widest mb-4">Questions</p>
               <div className="grid grid-cols-4 gap-2 mb-8">
                 {questions.map((q, index) => {
                   const pId = q.problemId._id;
@@ -274,7 +274,7 @@ export default function CodingTestWorkspace({
                       key={pId}
                       onClick={() => setCurrentIdx(index)}
                       className={`aspect-square flex items-center justify-center rounded-lg font-bold text-sm transition-all
-                        ${index === currentIdx ? "bg-yellow-50 text-richblack-900" : state?.status === 'solved' ? "bg-caribbeangreen-600 text-white" : "bg-richblack-700 hover:bg-richblack-600"}`}
+                        ${index === currentIdx ? "bg-white text-black" : state?.status === 'solved' ? "bg-emerald-500/80 text-white" : "bg-richblack-700 hover:bg-richblack-600"}`}
                     >
                       {index+1}
                     </button>
@@ -283,19 +283,19 @@ export default function CodingTestWorkspace({
               </div>
 
               <div className="bg-richblack-900 border border-richblack-700 p-4 rounded-xl space-y-4">
-                <p className="text-[10px] text-richblack-400 uppercase font-black">Current Status</p>
+                <p className="text-[10px] text-richblack-400 font-bold">Current status</p>
                 <div className="flex flex-col gap-4">
                    <div>
-                      <p className="text-[9px] text-richblack-500 uppercase mb-1">Execution</p>
+                      <p className="text-[9px] text-richblack-500 mb-1">Execution</p>
                       <p className="text-xs font-mono">{runCount} / 10 runs</p>
                       <div className="w-full h-1 bg-richblack-700 rounded-full mt-1 overflow-hidden">
                          <div className="h-full bg-blue-500" style={{ width: `${(runCount/10)*100}%` }} />
                       </div>
                    </div>
                    <div>
-                      <p className="text-[9px] text-richblack-500 uppercase mb-1">Result</p>
-                      <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${problemStates[problemId]?.status === 'solved' ? 'text-caribbeangreen-200 border-caribbeangreen-800 bg-caribbeangreen-900/40' : 'text-richblack-400 border-richblack-700'}`}>
-                         {problemStates[problemId]?.status?.toUpperCase() || 'NONE'}
+                      <p className="text-[9px] text-richblack-500 mb-1">Result</p>
+                      <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${problemStates[problemId]?.status === 'solved' ? 'text-emerald-300 border-emerald-900 bg-emerald-900/20' : 'text-richblack-400 border-richblack-800 bg-richblack-800/20'}`}>
+                         {problemStates[problemId]?.status ? problemStates[problemId].status.charAt(0).toUpperCase() + problemStates[problemId].status.slice(1) : 'None'}
                       </span>
                    </div>
                 </div>
@@ -327,17 +327,17 @@ export default function CodingTestWorkspace({
               {!problem ? <p className="text-richblack-400">Loading...</p> : (
                 <>
                   <h3 className="text-xl font-bold mb-2 break-words">{problem.title}</h3>
-                  <div className="flex gap-2 mb-4">
+                  <div className="flex gap-2 mb-5">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${DIFF_COLORS[problem.difficulty]}`}>{problem.difficulty}</span>
-                    <span className="bg-richblack-700 px-2 py-0.5 rounded text-[10px] text-richblack-300 uppercase">{problem.topic}</span>
+                    <span className="bg-richblack-900 border border-richblack-700 px-2.5 py-0.5 rounded text-[10px] text-richblack-400 font-medium">{problem.topic}</span>
                   </div>
                   <div className="prose prose-sm prose-invert text-richblack-200">
                     <p className="whitespace-pre-wrap leading-relaxed">{problem.description}</p>
                   </div>
                   {problem.exampleInput && (
-                    <div className="mt-6">
-                      <p className="text-[10px] text-richblack-400 uppercase font-bold mb-2 tracking-widest">Example</p>
-                      <pre className="bg-richblack-900 p-3 rounded-lg border border-richblack-700 text-xs font-mono overflow-x-auto">{problem.exampleInput}</pre>
+                    <div className="mt-8">
+                      <p className="text-[10px] text-richblack-500 font-bold mb-2 tracking-widest">Example</p>
+                      <pre className="bg-richblack-900 p-4 rounded-xl border border-richblack-700 text-xs font-mono overflow-x-auto text-richblack-100">{problem.exampleInput}</pre>
                     </div>
                   )}
                 </>
@@ -360,10 +360,16 @@ export default function CodingTestWorkspace({
                     <div className="flex-1 overflow-hidden relative">
                        <CodeEditor language={language} code={code} setCode={setCode} readOnly={problemStates[problemId]?.status === 'solved'} />
                        {submissionResult && (
-                          <div className="absolute left-3 right-3 top-3 z-50 animate-slideInRight rounded-xl border-2 border-richblack-700 bg-richblack-800 p-4 shadow-2xl md:left-auto md:right-4 md:top-4 md:max-w-sm">
-                            <h4 className="text-xs font-bold uppercase mb-3">Judge Result</h4>
-                            <div className="flex justify-between text-xs mb-1"><span>Verdict</span><span className={submissionResult.status === "Accepted" ? "text-caribbeangreen-400" : "text-pink-400"}>{submissionResult.status}</span></div>
-                            <div className="flex justify-between text-xs"><span>Passed</span><span className="font-mono">{submissionResult.passedTestCases} / {submissionResult.total}</span></div>
+                          <div className="absolute left-3 right-3 top-3 z-50 animate-slideInRight rounded-xl border border-richblack-700 bg-richblack-800 p-4 shadow-2xl md:left-auto md:right-4 md:top-4 md:max-w-sm">
+                            <h4 className="text-[10px] font-bold text-richblack-400 tracking-widest mb-3">Judge result</h4>
+                            <div className="flex justify-between text-xs mb-1">
+                               <span className="text-richblack-400">Verdict</span>
+                               <span className={`font-bold ${submissionResult.status === "Accepted" ? "text-emerald-400" : "text-red-400"}`}>{submissionResult.status}</span>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                               <span className="text-richblack-400">Passed</span>
+                               <span className="font-mono font-bold">{submissionResult.passedTestCases} / {submissionResult.total}</span>
+                            </div>
                           </div>
                        )}
                     </div>

@@ -114,3 +114,28 @@ export const problemEndpoints = {
   GET_ALL_PROBLEMS_API: BASE_URL + "/api/v1/problems/all",
   GET_PROBLEM_DETAILS_API: BASE_URL + "/api/v1/problems", // append /:id
 }
+
+// LIVE ANALYTICS ENDPOINTS
+export const liveAnalyticsEndpoints = {
+  GET_SESSION_SUMMARY_API: BASE_URL + "/api/v1/live-analytics/session", // append /:sessionId/summary
+  GET_COURSE_SESSION_HISTORY_API: BASE_URL + "/api/v1/live-analytics/course", // append /:courseId/history
+  GET_SESSION_STUDENTS_API: BASE_URL + "/api/v1/live-analytics/session", // append /:sessionId/students
+}
+
+// INSTRUCTOR DASHBOARD ANALYTICS
+export const instructorAnalyticsEndpoints = {
+  GET_EXAM_OVERVIEW_API: BASE_URL + "/api/v1/instructor-analytics/overview",
+  GET_FAILED_QUESTIONS_API: BASE_URL + "/api/v1/instructor-analytics/failed",
+  GET_TOP_PERFORMERS_API: BASE_URL + "/api/v1/instructor-analytics/top-performers",
+}
+
+// CHEATING ANALYTICS
+export const cheatingAnalyticsEndpoints = {
+  GET_CHEATING_ANALYSIS_API: BASE_URL + "/api/v1/cheating-analytics",
+  GET_CHEATING_SUMMARY_API: BASE_URL + "/api/v1/cheating-analytics/summary",
+}
+
+// LIVE CLASS ENDPOINTS
+export const liveClassEndpoints = {
+  START_LIVE_CLASS_API: BASE_URL + "/api/v1/live-class/start",
+}

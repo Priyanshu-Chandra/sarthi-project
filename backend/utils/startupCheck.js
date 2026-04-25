@@ -39,6 +39,18 @@ const validateEnvironment = () => {
     console.log("✅ All execution tools are verified and accessible.");
   }
 
+  const requiredEnv = [
+    "ZEGO_APP_ID",
+    "ZEGO_SERVER_SECRET",
+    "FRONTEND_URL",
+  ];
+  const missingEnv = requiredEnv.filter((key) => !process.env[key]);
+
+  if (missingEnv.length > 0) {
+    console.warn("WARNING: Missing live class environment variables:", missingEnv.join(", "));
+    console.warn("Live class token generation or email join links may fail until these are configured.");
+  }
+
   console.log("---------------------------------");
 
   return checks;

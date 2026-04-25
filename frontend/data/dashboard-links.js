@@ -75,7 +75,7 @@ export const sidebarLinks = [
     name: "Achievements",
     path: "/dashboard/coding-practice/achievements",
     type: ACCOUNT_TYPE.STUDENT,
-    icon: "VscTrophy",
+    icon: "VscVerified",
   },
   {
     id: 7,
@@ -97,5 +97,19 @@ export const sidebarLinks = [
     path: "/dashboard/all-instructors",
     type: ACCOUNT_TYPE.ADMIN,
     icon: "VscNotebook",
+  },
+  {
+    id: 15,
+    name: "Live History",
+    path: "/dashboard/instructor/live-sessions",
+    type: ACCOUNT_TYPE.INSTRUCTOR,
+    icon: "VscHistory",
+  },
+  {
+    id: 16,
+    name: "Test Intelligence",
+    path: "/dashboard/instructor/test-analysis",
+    type: ACCOUNT_TYPE.INSTRUCTOR,
+    icon: "VscGraph",
   },
 ];

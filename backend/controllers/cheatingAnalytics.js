@@ -5,9 +5,9 @@ exports.getCheatingSummary = async (req, res) => {
   try {
     const { testId } = req.params;
 
-    const results = await TestResult.find({
-      testId,
-      status: { $in: ["COMPLETED", "CHEATED"] }
+    const results = await TestResult.find({ 
+      $or: [{ testId }, { quizId: testId }],
+      status: { $in: ["COMPLETED", "CHEATED"] } 
     }).lean();
 
     const summary = { safe: 0, suspicious: 0, high: 0, avgRiskScore: 0, highRiskRatio: 0 };
@@ -41,9 +41,9 @@ exports.getCheatingAnalysis = async (req, res) => {
   try {
     const { testId } = req.params;
 
-    const results = await TestResult.find({
-      testId,
-      status: { $in: ["COMPLETED", "CHEATED"] }
+    const results = await TestResult.find({ 
+      $or: [{ testId }, { quizId: testId }],
+      status: { $in: ["COMPLETED", "CHEATED"] } 
     })
     .populate("studentId", "firstName lastName email")
     .lean();

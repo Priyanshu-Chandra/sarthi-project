@@ -159,7 +159,7 @@ async function verifyPayment(bodyData, token, navigate, dispatch, userDetails) {
       courses: [...(userDetails.courses || []), ...bodyData.coursesId],
     };
     dispatch(setUser(updatedUser));
-    localStorage.setItem("user", JSON.stringify(updatedUser));
+    sessionStorage.setItem("user", JSON.stringify(updatedUser));
 
     navigate("/dashboard/enrolled-courses");
     dispatch(resetCart());

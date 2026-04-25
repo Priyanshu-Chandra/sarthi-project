@@ -7,7 +7,10 @@ import ExamStatsCard from "../components/analytics/ExamStatsCard";
 import FailedQuestionsChart from "../components/analytics/FailedQuestionsChart";
 import CheatingTable from "../components/analytics/CheatingTable";
 
-const BASE_URL = import.meta.env.VITE_APP_BASE_URL || "http://localhost:5000/api";
+import { 
+  instructorAnalyticsEndpoints, 
+  cheatingAnalyticsEndpoints 
+} from "../services/apis";
 
 const InstructorDashboard = () => {
   const { testId } = useParams();
@@ -31,11 +34,11 @@ const InstructorDashboard = () => {
         };
 
         const [oRes, fRes, tRes, cRes, sumRes] = await Promise.all([
-          axios.get(`${BASE_URL}/instructor/overview/${testId}`, config),
-          axios.get(`${BASE_URL}/instructor/failed/${testId}`, config),
-          axios.get(`${BASE_URL}/instructor/top-performers/${testId}`, config),
-          axios.get(`${BASE_URL}/cheating/${testId}`, config),
-          axios.get(`${BASE_URL}/cheating/summary/${testId}`, config)
+          axios.get(`${instructorAnalyticsEndpoints.GET_EXAM_OVERVIEW_API}/${testId}`, config),
+          axios.get(`${instructorAnalyticsEndpoints.GET_FAILED_QUESTIONS_API}/${testId}`, config),
+          axios.get(`${instructorAnalyticsEndpoints.GET_TOP_PERFORMERS_API}/${testId}`, config),
+          axios.get(`${cheatingAnalyticsEndpoints.GET_CHEATING_ANALYSIS_API}/${testId}`, config),
+          axios.get(`${cheatingAnalyticsEndpoints.GET_CHEATING_SUMMARY_API}/${testId}`, config)
         ]);
 
         setOverview(oRes.data);
@@ -57,25 +60,32 @@ const InstructorDashboard = () => {
 
   if (loading) {
     return (
-      <div className="p-6 max-w-6xl mx-auto w-full">
-        <h1 className="text-3xl font-bold text-white mb-6 animate-pulse">Loading Analytics...</h1>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="h-[120px] bg-richblack-800 rounded-2xl animate-pulse"></div>
-          <div className="h-[120px] bg-richblack-800 rounded-2xl animate-pulse"></div>
-          <div className="h-[120px] bg-richblack-800 rounded-2xl animate-pulse"></div>
-          <div className="h-[120px] bg-richblack-800 rounded-2xl animate-pulse"></div>
+      <div className="p-6 max-w-6xl mx-auto w-full min-h-[400px] flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 border-4 border-yellow-100 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <h1 className="text-2xl font-bold text-white mb-6 animate-pulse">Analyzing Test Intelligence...</h1>
         </div>
-        <div className="h-[350px] bg-richblack-800 rounded-2xl animate-pulse"></div>
       </div>
     );
   }
 
-  if (!overview && failed.length === 0) {
+  // Robust check for empty data: If overview is empty or has 0 students AND no failed questions
+  const hasNoData = (!overview || Object.keys(overview).length === 0 || overview.totalStudents === 0) && failed.length === 0;
+
+  if (hasNoData) {
     return (
-      <div className="p-6 max-w-6xl mx-auto w-full text-center py-20 text-white">
-        <h2 className="text-2xl font-bold mb-4">No Data Available</h2>
-        <p className="text-gray-400">No students have completed this exam yet.</p>
-        <Link to="/dashboard/my-courses" className="text-yellow-400 mt-4 block underline">Back to Courses</Link>
+      <div className="p-6 max-w-6xl mx-auto w-full text-center py-24 bg-richblack-900/50 rounded-3xl border border-richblack-800">
+        <div className="text-6xl mb-6">📊</div>
+        <h2 className="text-3xl font-bold mb-4 text-white font-boogaloo">Intelligence Pending</h2>
+        <p className="text-richblack-300 max-w-md mx-auto">
+          We haven't received any completed submissions for this test yet. Once students finish their attempt, AI-powered insights will appear here.
+        </p>
+        <Link 
+          to="/dashboard/instructor" 
+          className="mt-8 inline-block px-6 py-3 bg-yellow-50 text-richblack-900 font-bold rounded-xl hover:scale-105 transition-all"
+        >
+          Back to Portal
+        </Link>
       </div>
     );
   }
@@ -135,53 +145,77 @@ const InstructorDashboard = () => {
           </div>
         </div>
 
-        {/* Cheating Analytics */}
-        <div className="mt-2 text-white">
+        {/* Cheating Analytics - High Contrast Section */}
+        <div className="mt-8 bg-[#1f2937]/50 border-2 border-pink-500/30 rounded-3xl p-6 shadow-2xl shadow-pink-500/5">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="bg-pink-500/20 p-2 rounded-xl text-pink-400">
+              <span className="text-2xl">🚨</span>
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-white">Cheating Risk Analysis</h2>
+              <p className="text-richblack-400 text-sm italic">Automated proctoring & integrity report</p>
+            </div>
+            {cheatingSummary?.high > 0 && (
+              <div className="ml-auto bg-pink-500 text-white px-4 py-1 rounded-full text-xs font-bold animate-pulse">
+                ACTION REQUIRED: HIGH RISK DETECTED
+              </div>
+            )}
+          </div>
+
           {cheatingSummary && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-              <div className="bg-[#1f2937] p-4 rounded-xl border border-gray-700 shadow-sm flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm">Safe Attempts</p>
-                  <p className="text-2xl font-bold text-green-400 mt-1">{cheatingSummary.safe || 0}</p>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+              <div className="bg-[#111827] p-5 rounded-2xl border border-richblack-700 shadow-lg group hover:border-caribbeangreen-400/50 transition-all">
+                <div className="flex justify-between items-center mb-2">
+                  <p className="text-richblack-300 text-xs font-bold uppercase tracking-wider">Safe Attempts</p>
+                  <span className="text-green-400">🟢</span>
                 </div>
-                <div className="text-3xl">🟢</div>
+                <p className="text-3xl font-bold text-caribbeangreen-50">{cheatingSummary.safe || 0}</p>
               </div>
-              <div className="bg-[#1f2937] p-4 rounded-xl border border-gray-700 shadow-sm flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm">Suspicious</p>
-                  <p className="text-2xl font-bold text-yellow-400 mt-1">{cheatingSummary.suspicious || 0}</p>
+
+              <div className="bg-[#111827] p-5 rounded-2xl border border-richblack-700 shadow-lg group hover:border-yellow-400/50 transition-all">
+                <div className="flex justify-between items-center mb-2">
+                  <p className="text-richblack-300 text-xs font-bold uppercase tracking-wider">Suspicious</p>
+                  <span className="text-yellow-400">🟡</span>
                 </div>
-                <div className="text-3xl">🟡</div>
+                <p className="text-3xl font-bold text-yellow-50">{cheatingSummary.suspicious || 0}</p>
               </div>
-              <div className="bg-[#1f2937] p-4 rounded-xl border border-gray-700 shadow-sm flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm">High Risk</p>
-                  <p className="text-2xl font-bold text-red-500 mt-1">{cheatingSummary.high || 0}</p>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mt-1">
-                    {cheatingSummary.highRiskRatio || 0}% Cheating Density
-                  </p>
+
+              <div className="bg-[#111827] p-5 rounded-2xl border border-pink-500/50 shadow-lg group hover:border-pink-500 transition-all">
+                <div className="flex justify-between items-center mb-2">
+                  <p className="text-richblack-300 text-xs font-bold uppercase tracking-wider">High Risk</p>
+                  <span className="text-pink-500">🚨</span>
                 </div>
-                <div className="text-3xl">🚨</div>
+                <p className="text-3xl font-bold text-pink-50">{cheatingSummary.high || 0}</p>
+                <div className="mt-2 h-1 w-full bg-richblack-800 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-pink-500 transition-all duration-1000" 
+                    style={{ width: `${Math.min(100, (cheatingSummary.highRiskRatio || 0))}%` }}
+                  ></div>
+                </div>
               </div>
-              <div className="bg-[#1f2937] p-4 rounded-xl border border-gray-700 shadow-sm flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm">Avg Risk Score</p>
-                  <p className={`text-2xl font-bold mt-1 ${
-                    cheatingSummary.avgRiskScore >= 9 ? "text-red-500" :
-                    cheatingSummary.avgRiskScore >= 4 ? "text-yellow-400" : "text-green-400"
-                  }`}>
-                    {cheatingSummary.avgRiskScore || 0}
-                  </p>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
-                    {cheatingSummary.avgRiskScore >= 9 ? "Critical Risk" :
-                     cheatingSummary.avgRiskScore >= 4 ? "Moderate Risk" : "Low Risk"}
-                  </p>
+
+              <div className="bg-[#111827] p-5 rounded-2xl border border-richblack-700 shadow-lg group hover:border-blue-400/50 transition-all">
+                <div className="flex justify-between items-center mb-2">
+                  <p className="text-richblack-300 text-xs font-bold uppercase tracking-wider">Avg Risk Score</p>
+                  <span className="text-blue-400">🛡️</span>
                 </div>
-                <div className="text-3xl">🛡️</div>
+                <p className={`text-3xl font-bold ${
+                  cheatingSummary.avgRiskScore >= 9 ? "text-pink-500" :
+                  cheatingSummary.avgRiskScore >= 4 ? "text-yellow-400" : "text-caribbeangreen-100"
+                }`}>
+                  {cheatingSummary.avgRiskScore || 0}
+                </p>
+                <p className="text-[10px] text-richblack-500 font-mono mt-1 uppercase">
+                  {cheatingSummary.avgRiskScore >= 9 ? "System Compromised" :
+                   cheatingSummary.avgRiskScore >= 4 ? "Elevated Alert" : "Clean History"}
+                </p>
               </div>
             </div>
           )}
-          <CheatingTable data={cheating} />
+          
+          <div className="bg-[#111827] rounded-2xl overflow-hidden border border-richblack-700">
+            <CheatingTable data={cheating} />
+          </div>
         </div>
 
       </div>

@@ -104,6 +104,10 @@ const testResultSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    startedByStudent: {
+      type: Boolean,
+      default: false,
+    },
     attemptNumber: {
       type: Number,
       default: 1,
@@ -132,10 +136,21 @@ const testResultSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    integrityScore: {
+      type: Number,
+      default: 100,
+    },
     passed: {
       type: Boolean,
       default: false,
     },
+    violationLogs: [
+      {
+        type: { type: String },
+        timestamp: { type: Date, default: Date.now },
+        weight: { type: Number },
+      }
+    ],
     eligibleForCertificate: {
       type: Boolean,
       default: false,
@@ -159,6 +174,14 @@ testResultSchema.index({ studentId: 1, testId: 1 });
 testResultSchema.index({ testId: 1, studentId: 1, status: 1 });
 // High-performance index for analytics
 testResultSchema.index({ testId: 1, status: 1 });
+// Allow only one active attempt per student/test at a time.
+testResultSchema.index(
+  { studentId: 1, testId: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: "IN_PROGRESS" },
+  },
+);
 
 module.exports =
   mongoose.models.TestResult || mongoose.model("TestResult", testResultSchema);

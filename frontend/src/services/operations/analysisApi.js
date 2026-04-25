@@ -54,7 +54,7 @@ export const getStudentAnalytics = async (token) => {
   try {
     const response = await apiConnector(
       "GET",
-      `${BASE_URL}/api/analytics/student`,
+      `${BASE_URL}/api/v1/analysis/student`,
       null,
       { Authorization: `Bearer ${token}` }
     );

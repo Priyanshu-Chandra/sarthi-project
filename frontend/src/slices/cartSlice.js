@@ -2,14 +2,14 @@ import { createSlice } from "@reduxjs/toolkit"
 import { toast } from "react-hot-toast"
 
 const initialState = {
-  cart: localStorage.getItem("cart")
-    ? JSON.parse(localStorage.getItem("cart"))
+  cart: sessionStorage.getItem("cart")
+    ? JSON.parse(sessionStorage.getItem("cart"))
     : [],
-  total: localStorage.getItem("total")
-    ? JSON.parse(localStorage.getItem("total"))
+  total: sessionStorage.getItem("total")
+    ? JSON.parse(sessionStorage.getItem("total"))
     : 0,
-  totalItems: localStorage.getItem("totalItems")
-    ? JSON.parse(localStorage.getItem("totalItems"))
+  totalItems: sessionStorage.getItem("totalItems")
+    ? JSON.parse(sessionStorage.getItem("totalItems"))
     : 0,
 }
 
@@ -32,9 +32,9 @@ const cartSlice = createSlice({
       state.totalItems++;
       state.total += course.price;
       // Update to localstorage
-      localStorage.setItem("cart", JSON.stringify(state.cart));
-      localStorage.setItem("total", JSON.stringify(state.total));
-      localStorage.setItem("totalItems", JSON.stringify(state.totalItems));
+      sessionStorage.setItem("cart", JSON.stringify(state.cart));
+      sessionStorage.setItem("total", JSON.stringify(state.total));
+      sessionStorage.setItem("totalItems", JSON.stringify(state.totalItems));
       // show toast
       toast.success("Course added to cart");
     },
@@ -49,9 +49,9 @@ const cartSlice = createSlice({
         state.total -= state.cart[index].price;
         state.cart.splice(index, 1);
         // Update to localstorage
-        localStorage.setItem("cart", JSON.stringify(state.cart));
-        localStorage.setItem("total", JSON.stringify(state.total));
-        localStorage.setItem("totalItems", JSON.stringify(state.totalItems));
+        sessionStorage.setItem("cart", JSON.stringify(state.cart));
+        sessionStorage.setItem("total", JSON.stringify(state.total));
+        sessionStorage.setItem("totalItems", JSON.stringify(state.totalItems));
         // show toast
         toast.success("Course removed from cart");
       }
@@ -62,9 +62,9 @@ const cartSlice = createSlice({
       state.total = 0;
       state.totalItems = 0;
       // Update to localstorage
-      localStorage.removeItem("cart");
-      localStorage.removeItem("total");
-      localStorage.removeItem("totalItems");
+      sessionStorage.removeItem("cart");
+      sessionStorage.removeItem("total");
+      sessionStorage.removeItem("totalItems");
     },
   },
 })

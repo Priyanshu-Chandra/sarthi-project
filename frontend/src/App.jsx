@@ -60,6 +60,10 @@ import InstructorDashboard from "./pages/InstructorDashboard";
 import Achievements from "./pages/CodingPractice/Achievements";
 import SystemHealth from "./pages/SystemHealth";
 
+import LiveClass from "./pages/LiveClass";
+import InstructorSessionHistory from "./components/core/Dashboard/InstructorSessionHistory";
+import InstructorPortal from "./components/core/Dashboard/InstructorPortal";
+
 function App() {
 
   const { user } = useSelector((state) => state.profile)
@@ -199,7 +203,6 @@ function App() {
               <Route path="dashboard/student-analytics" element={<StudentDashboard />} />
             </>
           )}
-
           {/* Route only for Instructors */}
           {/* add course , MyCourses, EditCourse*/}
           {user?.accountType === ACCOUNT_TYPE.INSTRUCTOR && (
@@ -209,6 +212,9 @@ function App() {
               <Route path="dashboard/my-courses" element={<MyCourses />} />
               <Route path="dashboard/edit-course/:courseId" element={<EditCourse />} />
               <Route path="dashboard/instructor-analytics/:testId" element={<InstructorDashboard />} />
+              <Route path="dashboard/live-analytics/:courseId" element={<InstructorSessionHistory />} />
+              <Route path="dashboard/instructor/live-sessions" element={<InstructorPortal mode="live" />} />
+              <Route path="dashboard/instructor/test-analysis" element={<InstructorPortal mode="test" />} />
             </>
           )}
         </Route>
@@ -244,7 +250,15 @@ function App() {
           }
         />
 
-
+        {/* Live Class Route */}
+        <Route
+          path="/live-class/:roomId"
+          element={
+            <ProtectedRoute>
+              <LiveClass />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Page Not Found (404 Page ) */}
         <Route path="*" element={<PageNotFound />} />
