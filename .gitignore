@@ -12,14 +12,6 @@ build/
 .vercel/
 package-lock.json
 
-# --- AI TOOLS & EXTENSIONS (STEALTH MODE) ---
-.aider*
-.cursor/
-.codex-run/
-.gemini/
-.aiderignore
-aider.chat.history.md
-.codex-run/
 
 # --- LOGS, CACHES & DEBUGGING ---
 *.log
@@ -39,23 +31,7 @@ backend/*.txt
 backend/*.log
 frontend/*.log
 
-# --- TEST SCRIPTS & ONE-OFF UTILITIES (BACKEND) ---
-# This rule catches all the "junk" scripts in the root of the backend
-backend/test-*.js
-backend/check-*.js
-backend/force_*.js
-backend/migrate*.js
-backend/seed*.js
-backend/nuke*.js
-backend/remediate*.js
-backend/find-*.js
-backend/global-*.js
-backend/send-*.js
-backend/detailed_activity_check.js
-backend/enrolled_activity_check.js
-backend/fix-indices.js
-backend/scratch/
-backend/scripts/
+
 
 # --- OS & EDITOR SPECIFIC ---
 .DS_Store
