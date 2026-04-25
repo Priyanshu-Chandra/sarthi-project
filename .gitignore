@@ -12,6 +12,13 @@ build/
 .vercel/
 package-lock.json
 
+# --- EDITOR AND IDE CONFIGURATIONS ---
+.aider*
+.cursor/
+.codex-run/
+.gemini/
+.aiderignore
+aider.chat.history.md
 
 # --- LOGS, CACHES & DEBUGGING ---
 *.log
@@ -31,8 +38,6 @@ backend/*.txt
 backend/*.log
 frontend/*.log
 
-
-
 # --- OS & EDITOR SPECIFIC ---
 .DS_Store
 Thumbs.db
@@ -41,3 +46,14 @@ desktop.ini
 .idea/
 *.sublime-project
 *.sublime-workspace
+*.swp
+*.bak
+*.tmp
+
+# --- NODE/FRONTEND SPECIFIC ---
+.npm
+.eslintcache
+.stylelintcache
+.serverless/
+.next/
+out/

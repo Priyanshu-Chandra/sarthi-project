@@ -90,6 +90,25 @@ export default function LiveClass() {
   const [pollTimeLeft, setPollTimeLeft]   = useState(0);
   const didConnectSocketRef = useRef(false);
 
+  // ─── CRITICAL FIX: Hide loading overlay when both video + realtime are ready ───
+  useEffect(() => {
+    if (socketReady && zegoReady && !isReady) {
+      console.log("✅ Classroom fully ready — hiding loader overlay");
+      setIsReady(true);
+    }
+  }, [socketReady, zegoReady, isReady]);
+
+  // Fallback: force-hide loader after 15s to prevent eternal spinner
+  useEffect(() => {
+    const fallback = setTimeout(() => {
+      if (!isReady) {
+        console.warn("⚠️ Fallback: forcing loader hide after 15s timeout");
+        setIsReady(true);
+      }
+    }, 15000);
+    return () => clearTimeout(fallback);
+  }, [isReady]);
+
   const liveLog = (step, details = {}) => {
     const payload = {
       roomId,
@@ -330,6 +349,7 @@ export default function LiveClass() {
         setCourseName(cName);
         setCourseId(cid);
         setValidated(true);
+        setValidating(false); // ✅ Release the validation gate to show the classroom UI
 
         // 2. Get Zego Token
         console.log("📍 [Unified Init] 2. Generating Stable Session ID...");
@@ -378,16 +398,29 @@ export default function LiveClass() {
         const zp = ZegoUIKitPrebuilt.create(kitToken);
         zpRef.current = zp;
 
+        // ✅ CRITICAL FIX: Wait for React to render the container
+        // Since setValidating(false) was just called, the DOM hasn't updated yet.
+        let retries = 0;
+        while (!meetingRef.current && retries < 40) {
+          await new Promise(r => setTimeout(r, 50));
+          retries++;
+        }
+        
+        if (!meetingRef.current) {
+           throw new Error("Video container failed to render in time.");
+        }
+
         await zp.joinRoom({
           container: meetingRef.current,
           scenario: { mode: ZegoUIKitPrebuilt.VideoConference },
-          showPreJoinView: true, 
+          showPreJoinView: false,
           showScreenSharingButton: true,
-          showUserList: true,
+          showUserList: false,
           showAudioVideoSettingsButton: true,
-          showTextChat: true, 
-          showMySelfTimer: true,
-          showLayoutButton: true,
+          showTextChat: false,
+          showMySelfTimer: false,
+          showLayoutButton: false,
+          showRemoveUserButton: userRole === "instructor",
           layout: "Grid",
           onJoinRoom: () => {
             console.log("📍 [Unified Init] ✅ onJoinRoom Fired! Classroom is Ready.");
@@ -629,7 +662,17 @@ export default function LiveClass() {
     };
 
     const handleReceiveMessage = (msg) => {
+      // ✅ FIX: Remove from pending when server echo arrives (prevents double message)
+      if (msg.msgId) {
+        setPendingMessages(prev => {
+          const next = { ...prev };
+          delete next[msg.msgId];
+          return next;
+        });
+      }
       setMessages((prev) => {
+        // Deduplicate by msgId to prevent double display
+        if (msg.msgId && prev.some(m => m.msgId === msg.msgId)) return prev;
         const updated = [...prev, msg];
         return updated.slice(-200);
       });
@@ -1041,7 +1084,8 @@ export default function LiveClass() {
         text: input,
         userName: `${user.firstName} ${user.lastName || ""}`,
         role: userRole,
-        type: chatFilter === "all" ? "normal" : chatFilter.toLowerCase(),
+        // ✅ FIX: Use messageType (the send mode selector), not chatFilter (the view filter)
+        type: messageType === "normal" ? "normal" : messageType,
         pending: true,
         msgId,
         timestamp: Date.now()
@@ -1471,19 +1515,6 @@ export default function LiveClass() {
     <div className="flex h-full flex-col">
        <div className="mb-6 flex items-center justify-between">
          <h2 className="text-2xl font-black tracking-tighter text-white">Class Stream</h2>
-         <div className="flex gap-1.5 rounded-xl bg-white/5 p-1">
-            {["all", "question", "important"].map(f => (
-               <button 
-                 key={f} 
-                 onClick={() => setChatFilter(f)} 
-                 className={`rounded-lg px-3 py-1 text-[9px] font-black uppercase tracking-widest transition-all ${
-                   chatFilter === f ? "bg-white text-black shadow-lg" : "text-white/40 hover:text-white"
-                 }`}
-               >
-                 {f}
-               </button>
-            ))}
-         </div>
        </div>
 
        <div className="flex-1 space-y-8 overflow-y-auto pr-2 custom-scrollbar">
@@ -1520,7 +1551,8 @@ export default function LiveClass() {
                     <div className="flex items-center gap-2 mb-2">
                        <p className="text-sm font-black text-white/90 truncate">{group.name}</p>
                        <span className="text-[10px] font-bold text-white/20 whitespace-nowrap">
-                         {new Date(group.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                         {/* ✅ FIX: group uses lastTimestamp, not timestamp */}
+                        {group.lastTimestamp ? new Date(group.lastTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}
                        </span>
                     </div>
                     <div className="space-y-2">
@@ -1578,16 +1610,21 @@ export default function LiveClass() {
              )}
           </div>
           
+          {/* ✅ Combined message type + view filter — one click does both */}
           <div className="flex gap-2 p-1 bg-white/5 rounded-2xl">
-             {["normal", "question", "important"].map(t => (
+             {[
+               { label: "All", type: "normal", filter: "all" },
+               { label: "❓ Question", type: "question", filter: "question" },
+               { label: "📌 Important", type: "important", filter: "important" }
+             ].map(t => (
                 <button 
-                  key={t} 
-                  onClick={() => setMessageType(t)} 
+                  key={t.type} 
+                  onClick={() => { setMessageType(t.type); setChatFilter(t.filter); }} 
                   className={`flex-1 rounded-xl py-2 text-[9px] font-black uppercase tracking-widest transition-all ${
-                    messageType === t ? "bg-indigo-600 text-white shadow-lg" : "text-white/40 hover:text-white"
+                    messageType === t.type ? "bg-indigo-600 text-white shadow-lg" : "text-white/40 hover:text-white"
                   }`}
                 >
-                   {t}
+                   {t.label}
                 </button>
              ))}
           </div>
@@ -1771,7 +1808,7 @@ export default function LiveClass() {
         />
 
         {currentStage.showSidebar && isSidebarOpen && (
-          <div className="hidden lg:flex h-full">
+          <div className="flex h-full">
              <SidebarTabs 
                sidebarTab={sidebarTab}
                setSidebarTab={setSidebarTab}
