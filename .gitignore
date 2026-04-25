@@ -1,27 +1,67 @@
-# Logs
-logs
+# --- SECURITY & SECRETS ---
+.env
+.env.local
+.env.*.local
+frontend/.env
+backend/.env
+
+# --- DEPENDENCIES & BUILD ---
+node_modules/
+dist/
+build/
+.vercel/
+package-lock.json
+
+# --- AI TOOLS & EXTENSIONS (STEALTH MODE) ---
+.aider*
+.cursor/
+.codex-run/
+.gemini/
+.aiderignore
+aider.chat.history.md
+.codex-run/
+
+# --- LOGS, CACHES & DEBUGGING ---
 *.log
+debug-*.log
+build-log.txt
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+.eslintcache
+.parcel-cache
+.turbo/
 
-node_modules
-dist
-dist-ssr
-*.local
+# --- PROJECT SCRATCH & TEMPORARY ---
+tmp/
+_ul/
+screenshots/
+backend/*.txt
+backend/*.log
+frontend/*.log
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# --- TEST SCRIPTS & ONE-OFF UTILITIES (BACKEND) ---
+# This rule catches all the "junk" scripts in the root of the backend
+backend/test-*.js
+backend/check-*.js
+backend/force_*.js
+backend/migrate*.js
+backend/seed*.js
+backend/nuke*.js
+backend/remediate*.js
+backend/find-*.js
+backend/global-*.js
+backend/send-*.js
+backend/detailed_activity_check.js
+backend/enrolled_activity_check.js
+backend/fix-indices.js
+backend/scratch/
+backend/scripts/
+
+# --- OS & EDITOR SPECIFIC ---
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-.env
-.aider*
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
