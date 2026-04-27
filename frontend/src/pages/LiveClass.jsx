@@ -6,6 +6,7 @@ import { apiConnector } from "../services/apiConnector";
 import socket from "../utils/socket";
 import toast from "react-hot-toast";
 import InstructorLiveDashboard from "../components/core/Dashboard/InstructorLiveDashboard";
+import LiveCodeEditor from "./LiveCodeEditor";
 
 export default function LiveClass() {
   const { roomId }   = useParams();
@@ -57,6 +58,7 @@ export default function LiveClass() {
   const [liveMetrics, setLiveMetrics]     = useState(null);
   const [sessionId, setSessionId]         = useState(null);
   const [isClassLive, setIsClassLive]     = useState(true); // false = class ended, show post-session report
+  const [activeEditor, setActiveEditor]   = useState(null);
 
   // ── Smart Board V2 State ─────────────────────────────────────────────────
   const [brushColor, setBrushColor] = useState("#FFD700");
@@ -170,21 +172,100 @@ export default function LiveClass() {
   };
   // #endregion agent log
 
-  // âœ¨ 1. Deterministic Stage Config (The UI Brain)
+  // ──✨✨✨✨ Draggable & Resizable PIP State ✨✨✨✨─────────────────────
+  const [pipRect, setPipRect] = useState({ 
+    x: window.innerWidth - 360, 
+    y: 80, 
+    width: 320, 
+    height: 180 
+  });
+  const [isDraggingPip, setIsDraggingPip] = useState(false);
+  const [isResizingPip, setIsResizingPip] = useState(null); // null | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w'
+  const dragStartOffset = useRef({ x: 0, y: 0, initialRect: null });
+
+  useEffect(() => {
+    const handleGlobalMouseMove = (e) => {
+      if (isDraggingPip) {
+        e.preventDefault();
+        setPipRect(prev => ({
+          ...prev,
+          x: Math.max(0, Math.min(window.innerWidth - prev.width, e.clientX - dragStartOffset.current.x)),
+          y: Math.max(0, Math.min(window.innerHeight - prev.height, e.clientY - dragStartOffset.current.y))
+        }));
+      } else if (isResizingPip) {
+        e.preventDefault();
+        const { initialRect } = dragStartOffset.current;
+        const dx = e.clientX - dragStartOffset.current.startX;
+        const dy = e.clientY - dragStartOffset.current.startY;
+
+        setPipRect(prev => {
+          let next = { ...prev };
+          if (isResizingPip.includes('e')) next.width = Math.max(160, initialRect.width + dx);
+          if (isResizingPip.includes('w')) {
+            const width = Math.max(160, initialRect.width - dx);
+            if (width !== 160) {
+              next.width = width;
+              next.x = initialRect.x + dx;
+            }
+          }
+          if (isResizingPip.includes('s')) next.height = Math.max(90, initialRect.height + dy);
+          if (isResizingPip.includes('n')) {
+            const height = Math.max(90, initialRect.height - dy);
+            if (height !== 90) {
+              next.height = height;
+              next.y = initialRect.y + dy;
+            }
+          }
+          return next;
+        });
+      }
+    };
+
+    const handleGlobalMouseUp = (e) => {
+      if (isDraggingPip || isResizingPip) {
+        e.preventDefault();
+        setIsDraggingPip(false);
+        setIsResizingPip(false);
+      }
+    };
+
+    if (isDraggingPip || isResizingPip) {
+      window.addEventListener("mousemove", handleGlobalMouseMove);
+      window.addEventListener("mouseup", handleGlobalMouseUp);
+    }
+    return () => {
+      window.removeEventListener("mousemove", handleGlobalMouseMove);
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
+    };
+  }, [isDraggingPip, isResizingPip, pipRect.x, pipRect.y]);
+
   const stageConfig = {
     default:    { showSidebar: true,  board: "split",      video: "primary",    bg: "bg-[#0f0f14]" },
     board:      { showSidebar: false, board: "fullscreen", video: "pip",       bg: "bg-[#0a0a0f]" },
+    code:       { showSidebar: false, board: "hidden",     video: "pip",       bg: "bg-[#0a0a0f]" },
     discussion: { showSidebar: false, board: "hidden",     video: "primary",    bg: "bg-[#0f0f14]" }
   };
   const currentStage = stageConfig[viewMode] || stageConfig.default;
-  const smooth = "transition-all duration-700 ease-in-out"; // 🚀 Ensure smooth transitions exist
+  const smooth = "transition-all duration-700 ease-in-out"; 
 
   // ⚙️ 2. Status Priority Resolver
   const getSystemStatus = () => {
-    // Priority: Connection > Mic > Board
+    // Priority: Connection > Mic > Board/Code
     if (!socket?.connected) return { label: "Offline", type: "error", icon: "📡" };
     if (isMuted) return { label: "Mic Muted", type: "warning", icon: "🔇" };
-    if (!permissions?.canEditBoard && userRole !== "instructor") return { label: "Board View Only", type: "info", icon: "🔒" };
+    
+    // Context-aware permission messages
+    if (viewMode === "code") {
+      const isEditing = activeEditor === user?._id?.toString();
+      if (!isEditing && userRole !== "instructor") {
+         return { label: "Editor View Only", type: "info", icon: "🔒" };
+      }
+    } else if (viewMode === "board" || viewMode === "default") {
+      if (!permissions?.canEditBoard && userRole !== "instructor") {
+         return { label: "Board View Only", type: "info", icon: "🔒" };
+      }
+    }
+    
     return null;
   };
   const activeStatus = getSystemStatus();
@@ -948,11 +1029,6 @@ export default function LiveClass() {
       socket.emit("request-poll-state");
     };
 
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-    socket.on("connect_error", handleConnectError);
-    socket.on("reconnect", handleReconnect);
-
     // --- Poll Countdown Logic ---
     let pollInterval = null;
     if (poll?.expiresAt && !pollClosed) {
@@ -1001,8 +1077,17 @@ export default function LiveClass() {
       });
     }, 5000);
 
+    const handleCodeEditorUpdate = (data) => setActiveEditor(data.activeEditor);
+    const handleCodeStateSync   = (data) => setActiveEditor(data.activeEditor);
+
+    socket.on("code-editor-updated", handleCodeEditorUpdate);
+    socket.on("CODE_STATE",          handleCodeStateSync);
+    socket.on("connect",            handleConnect);
+    socket.on("disconnect",         handleDisconnect);
+    socket.on("connect_error",      handleConnectError);
+    socket.on("reconnect",          handleReconnect);
+
     return () => {
-      clearInterval(cursorCleanup);
       socket.off("INITIAL_PERMISSIONS",  handleInitialPermissions);
       socket.off("ROOM_JOIN_SUCCESS",    handleRoomJoinSuccess);
       socket.off("SESSION_READY",        handleSessionReady);
@@ -1038,6 +1123,8 @@ export default function LiveClass() {
       socket.off("ALL_UNMUTED",        handleAllUnmuted);
       socket.off("live-metrics",       handleLiveMetrics);
       socket.off("typing",             handleSocketTyping);
+      socket.off("code-editor-updated", handleCodeEditorUpdate);
+      socket.off("CODE_STATE",          handleCodeStateSync);
       socket.off("connect",            handleConnect);
       socket.off("disconnect",         handleDisconnect);
       socket.off("connect_error",      handleConnectError);
@@ -1400,6 +1487,10 @@ export default function LiveClass() {
   const allowBoard   = (userId) => socket.emit("ALLOW_BOARD",   { roomId, userId });
   const revokeBoard  = (userId) => socket.emit("REVOKE_BOARD",  { roomId, userId });
 
+  // Instructor: Give/Revoke Code Access
+  const giveCodeAccess   = (userId) => socket.emit("code-editor-control", { roomId, targetUserId: userId });
+  const revokeCodeAccess = () => socket.emit("code-editor-revoke", { roomId });
+
   const vote = (option) => {
     if (!roomId || !poll || votedOption) return;
 
@@ -1586,6 +1677,7 @@ export default function LiveClass() {
                          <span className={`h-2.5 w-2.5 rounded-full ${participant.permissions?.canVideo ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-red-500"}`} title="Camera" />
                          <span className={`h-2.5 w-2.5 rounded-full ${participant.permissions?.canEditBoard ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-red-500"}`} title="Board" />
                          <span className={`h-2.5 w-2.5 rounded-full ${participant.permissions?.canShareScreen ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-red-500"}`} title="Screen" />
+                         <span className={`h-2.5 w-2.5 rounded-full ${activeEditor === participant.userId ? "bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)]" : "bg-richblack-700"}`} title="Code" />
                        </div>
                      </div>
                      {/* Permission Toggle Grid */}
@@ -1616,6 +1708,26 @@ export default function LiveClass() {
                          );
                        })}
                      </div>
+
+                     {/* Code Editor Access Control */}
+                     <div className="mt-2">
+                       {activeEditor === participant.userId ? (
+                         <button
+                           onClick={() => revokeCodeAccess()}
+                           className="w-full rounded-xl border border-yellow-500/30 bg-yellow-500/10 py-2 text-[10px] font-black uppercase tracking-widest text-yellow-500 transition-all hover:bg-yellow-500 hover:text-black"
+                         >
+                           Revoke Code Access
+                         </button>
+                       ) : (
+                         <button
+                           onClick={() => giveCodeAccess(participant.userId)}
+                           className="w-full rounded-xl border border-white/5 bg-white/5 py-2 text-[10px] font-black uppercase tracking-widest text-white/40 transition-all hover:bg-indigo-600 hover:text-white"
+                         >
+                           Give Code Access
+                         </button>
+                       )}
+                     </div>
+
                      {userRole === "instructor" && (
                        <button
                          onClick={() => kickUser(participant)}
@@ -1640,19 +1752,27 @@ export default function LiveClass() {
                    { label: "Camera", key: "canVideo", icon: "📹", onText: "Camera On", offText: "Camera Off" },
                    { label: "Whiteboard", key: "canEditBoard", icon: "✏️", onText: "Can Edit", offText: "View Only" },
                    { label: "Screen Share", key: "canShareScreen", icon: "🖥️", onText: "Can Share", offText: "Blocked" },
-                 ].map((p) => (
-                   <div key={p.key} className={`flex items-center gap-2.5 rounded-xl border p-3 transition-all ${permissions?.[p.key] ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/5 text-red-400/60 border-red-500/10"}`}>
-                     <span className="text-lg">{p.icon}</span>
-                     <div className="flex flex-col">
-                       <span className="text-[9px] font-black uppercase tracking-widest text-white/40">{p.label}</span>
-                       <span className="text-[10px] font-bold">{permissions?.[p.key] ? p.onText : p.offText}</span>
+                   { label: "Code Editor", key: "canEditCode", icon: "💻", onText: "Can Edit", offText: "View Only" },
+                 ].map((p) => {
+                   const isAllowed = p.key === "canEditCode" 
+                     ? activeEditor === user?._id?.toString()
+                     : permissions?.[p.key];
+                   return (
+                     <div key={p.key} className={`flex items-center gap-2.5 rounded-xl border p-3 transition-all ${isAllowed ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/5 text-red-400/60 border-red-500/10"}`}>
+                       <span className="text-lg">{p.icon}</span>
+                       <div className="flex flex-col">
+                         <span className="text-[10px] font-black uppercase tracking-widest text-white/40">{p.label}</span>
+                         <span className="text-xs font-bold text-white/90">{isAllowed ? p.onText : p.offText}</span>
+                       </div>
                      </div>
-                   </div>
-                 ))}
+                   );
+                 })}
                </div>
              </div>
            </div>
          )}
+
+
        </section>
 
        <section className="border-t border-white/5 pt-6 pb-20">
@@ -2004,6 +2124,17 @@ export default function LiveClass() {
           chatSection={renderChatSection()}
           smooth={smooth}
           permissions={permissions}
+          socket={socket}
+          roomId={roomId}
+          user={user}
+          userRole={userRole}
+          pipRect={pipRect}
+          setPipRect={setPipRect}
+          isDraggingPip={isDraggingPip}
+          setIsDraggingPip={setIsDraggingPip}
+          isResizingPip={isResizingPip}
+          setIsResizingPip={setIsResizingPip}
+          dragStartOffset={dragStartOffset}
         />
 
         {currentStage.showSidebar && isSidebarOpen && (
@@ -2047,6 +2178,8 @@ export default function LiveClass() {
         historyCount={historyCount}
         userRole={userRole}
         permissions={permissions}
+        activeEditor={activeEditor}
+        user={user}
         clearBoardCanvas={clearBoardCanvas}
         setShowDashboard={setShowDashboard}
         isSidebarOpen={isSidebarOpen}
@@ -2067,7 +2200,9 @@ const MainStage = ({
   viewMode, setViewMode, currentStage, activeStatus, isMobile, 
   meetingRef, boardRef, canUseBoard, activeDrawer, brushSize, 
   startBoardDraw, continueBoardDraw, stopBoardDraw, remoteCursors, 
-  chatSection, smooth, permissions
+  chatSection, smooth, permissions,
+  socket, roomId, user, userRole,
+  pipRect, setPipRect, isDraggingPip, setIsDraggingPip, isResizingPip, setIsResizingPip, dragStartOffset
 }) => {
   return (
     <div className={`flex-1 relative overflow-hidden ${smooth} ${currentStage.bg}`}>
@@ -2091,13 +2226,59 @@ const MainStage = ({
 
       <div 
         onClick={() => viewMode === "board" && setViewMode("default")}
-        className={`${smooth} absolute z-10 overflow-hidden rounded-[32px] md:rounded-[48px] border border-white/10 bg-black shadow-[0_40px_100px_rgba(0,0,0,0.7)] ${
+        onMouseDown={(e) => {
+          if (currentStage.video === "pip") {
+            const handle = e.target.closest("[data-resize-handle]");
+            if (handle) {
+              e.preventDefault();
+              const direction = handle.getAttribute("data-resize-handle");
+              setIsResizingPip(direction);
+              dragStartOffset.current = { 
+                startX: e.clientX, 
+                startY: e.clientY, 
+                initialRect: { ...pipRect } 
+              };
+            } else {
+              setIsDraggingPip(true);
+              dragStartOffset.current = { x: e.clientX - pipRect.x, y: e.clientY - pipRect.y };
+            }
+          }
+        }}
+        style={currentStage.video === "pip" ? {
+          position: "fixed",
+          left: `${pipRect.x}px`,
+          top: `${pipRect.y}px`,
+          width: `${pipRect.width}px`,
+          height: `${pipRect.height}px`,
+          zIndex: 500,
+          cursor: isDraggingPip ? "grabbing" : "grab",
+          transition: isDraggingPip || isResizingPip ? "none" : "all 0.3s ease-out"
+        } : {}}
+        className={`${smooth} absolute overflow-hidden rounded-[32px] md:rounded-[48px] border border-white/10 bg-black shadow-[0_40px_100px_rgba(0,0,0,0.7)] ${
           isMobile && viewMode !== "discussion" ? "inset-0 h-full w-full rounded-none" :
           currentStage.video === "primary" ? "left-4 top-4 md:left-8 md:top-8 h-[40%] md:h-[58%] w-[calc(100%-2rem)] md:w-[calc(100%-4rem)]" :
-          currentStage.video === "pip"     ? "right-4 top-12 md:right-10 h-32 w-56 md:h-44 md:w-80 z-40 cursor-pointer ring-[8px] md:ring-[12px] ring-black/40" :
+          currentStage.video === "pip"     ? "z-[50] ring-[8px] md:ring-[12px] ring-black/40" :
           "hidden"
         } ${permissions?.canSpeak === false ? "zego-hide-mic" : ""} ${permissions?.canVideo === false ? "zego-hide-cam" : ""} ${permissions?.canShareScreen === false ? "zego-hide-screen" : ""}`}
       >
+        {currentStage.video === "pip" && (
+          <>
+            {/* Resize Handles */}
+            <div data-resize-handle="n" className="absolute top-0 inset-x-0 h-2 cursor-n-resize z-50 hover:bg-indigo-500/30 transition-colors" />
+            <div data-resize-handle="s" className="absolute bottom-0 inset-x-0 h-2 cursor-s-resize z-50 hover:bg-indigo-500/30 transition-colors" />
+            <div data-resize-handle="e" className="absolute right-0 inset-y-0 w-2 cursor-e-resize z-50 hover:bg-indigo-500/30 transition-colors" />
+            <div data-resize-handle="w" className="absolute left-0 inset-y-0 w-2 cursor-w-resize z-50 hover:bg-indigo-500/30 transition-colors" />
+            
+            <div data-resize-handle="nw" className="absolute top-0 left-0 w-4 h-4 cursor-nw-resize z-[51] hover:bg-indigo-500/50 rounded-full transition-colors" />
+            <div data-resize-handle="ne" className="absolute top-0 right-0 w-4 h-4 cursor-ne-resize z-[51] hover:bg-indigo-500/50 rounded-full transition-colors" />
+            <div data-resize-handle="sw" className="absolute bottom-0 left-0 w-4 h-4 cursor-sw-resize z-[51] hover:bg-indigo-500/50 rounded-full transition-colors" />
+            <div data-resize-handle="se" className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize z-[51] hover:bg-indigo-500/50 rounded-full transition-colors" />
+
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full pointer-events-none border border-white/5 opacity-0 group-hover:opacity-100 transition-opacity">
+               <span className="text-[8px] font-black uppercase text-white/50 tracking-tighter">Draggable & Resizable</span>
+            </div>
+          </>
+        )}
          <style>{`
             .zego-hide-mic div[aria-label="Toggle Microphone"], .zego-hide-mic div[aria-label="Turn off microphone"], .zego-hide-mic div[aria-label="Turn on microphone"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
             .zego-hide-cam div[aria-label="Toggle Camera"], .zego-hide-cam div[aria-label="Turn off camera"], .zego-hide-cam div[aria-label="Turn on camera"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
@@ -2176,6 +2357,18 @@ const MainStage = ({
            </div>
          )}
       </div>
+      
+      {/* ✅ CODE LAYER - Config Driven */}
+      {viewMode === "code" && (
+        <div className="absolute inset-0 z-[40] bg-[#0a0a10] animate-in fade-in zoom-in-95 duration-500 overflow-hidden">
+          <LiveCodeEditor 
+            socket={socket}
+            roomId={roomId}
+            user={user}
+            role={userRole}
+          />
+        </div>
+      )}
 
       {/* ✅ DISCUSSION OVERLAY (Adaptive) */}
       {(viewMode === "discussion" || (isMobile && viewMode === "default")) && (
@@ -2242,8 +2435,8 @@ const SidebarTabs = ({ sidebarTab, setSidebarTab, chatSection, peopleSection, po
 const BottomHUD = ({ 
   viewMode, setViewMode, canUseBoard, brushTool, setBrushTool, setBrushSize,
   brushColor, setBrushColor, handleUndo, historyCount, userRole, permissions,
-  clearBoardCanvas, setShowDashboard, isSidebarOpen, setIsSidebarOpen, 
-  hasRaisedHand, lowerHand, raiseHand, onEndClass, smooth 
+  activeEditor, user, clearBoardCanvas, setShowDashboard, isSidebarOpen, 
+  setIsSidebarOpen, hasRaisedHand, lowerHand, raiseHand, onEndClass, smooth 
 }) => (
   <div className={`fixed bottom-8 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-6 rounded-3xl border border-white/10 bg-richblack-900/60 p-2.5 px-8 shadow-2xl backdrop-blur-2xl ${smooth}`}>
 
@@ -2251,6 +2444,7 @@ const BottomHUD = ({
        {[
          { mode: "default", icon: "📺", label: "Teach" },
          { mode: "board", icon: "✏️", label: "Board" },
+         { mode: "code", icon: "💻", label: "Code" },
          { mode: "discussion", icon: "💬", label: "Group" }
        ].map(m => (
          <button 
@@ -2296,27 +2490,33 @@ const BottomHUD = ({
               { key: "canVideo", icon: "📹", label: "Cam" },
               { key: "canEditBoard", icon: "✏️", label: "Board" },
               { key: "canShareScreen", icon: "🖥️", label: "Screen" },
-            ].map((perm) => (
-              <div
-                key={perm.key}
-                className={`group relative flex h-8 w-8 items-center justify-center rounded-xl transition-all ${
-                  permissions[perm.key]
-                    ? "bg-emerald-500/20 text-emerald-400"
-                    : "bg-red-500/10 text-red-400/50"
-                }`}
-                title={`${perm.label}: ${permissions[perm.key] ? "Allowed" : "Blocked"}`}
-              >
-                <span className="text-sm">{perm.icon}</span>
-                {!permissions[perm.key] && (
-                  <span className="absolute inset-0 flex items-center justify-center">
-                    <span className="h-px w-4 bg-red-400 rotate-45" />
+              { key: "canEditCode", icon: "💻", label: "Code" },
+            ].map((perm) => {
+              const isAllowed = perm.key === "canEditCode" 
+                ? activeEditor === user?._id?.toString()
+                : permissions[perm.key];
+              return (
+                <div
+                  key={perm.key}
+                  className={`group relative flex h-8 w-8 items-center justify-center rounded-xl transition-all ${
+                    isAllowed
+                      ? "bg-emerald-500/20 text-emerald-400"
+                      : "bg-red-500/10 text-red-400/50"
+                  }`}
+                  title={`${perm.label}: ${isAllowed ? "Allowed" : "Blocked"}`}
+                >
+                  <span className="text-sm">{perm.icon}</span>
+                  {!isAllowed && (
+                    <span className="absolute inset-0 flex items-center justify-center">
+                      <span className="h-px w-4 bg-red-400 rotate-45" />
+                    </span>
+                  )}
+                  <span className="absolute -top-9 left-1/2 -translate-x-1/2 scale-0 rounded-lg bg-richblack-900 px-2 py-1 text-[9px] font-black uppercase tracking-tighter text-white shadow-2xl transition-all group-hover:scale-100 whitespace-nowrap">
+                    {isAllowed ? perm.label : `${perm.label} Blocked`}
                   </span>
-                )}
-                <span className="absolute -top-9 left-1/2 -translate-x-1/2 scale-0 rounded-lg bg-richblack-900 px-2 py-1 text-[9px] font-black uppercase tracking-tighter text-white shadow-2xl transition-all group-hover:scale-100 whitespace-nowrap">
-                  {permissions[perm.key] ? perm.label : `${perm.label} Blocked`}
-                </span>
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
         {userRole === "instructor" && (

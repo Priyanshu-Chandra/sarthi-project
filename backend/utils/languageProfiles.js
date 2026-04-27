@@ -112,6 +112,23 @@ const profiles = {
       },
     ],
   },
+  javascript: {
+    sourceFile: "main.js",
+    getRunCandidates: ({ sourcePath }) => [
+      {
+        command: process.env.NODE_BIN || "node",
+        args: [sourcePath],
+        versionArgs: ["--version"],
+        label: "node",
+      },
+      {
+        command: "node.exe",
+        args: [sourcePath],
+        versionArgs: ["--version"],
+        label: "node (exe)",
+      },
+    ],
+  },
 };
 
 const getLanguageProfile = (language) => profiles[language] || null;

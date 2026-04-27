@@ -48,18 +48,19 @@ const runProcess = ({ command, args, cwd, input = "", timeoutMs, outputLimit = M
 
     let child;
     try {
+      const useShell = process.platform === "win32";
+      console.log(`🛠️ [EXEC_SPAWN] Command: ${command} | Shell: ${useShell} | CWD: ${cwd}`);
+      
       child = spawn(command, args, {
         cwd,
-        shell: false,
+        shell: useShell,
         windowsHide: true,
         detached: process.platform !== "win32",
         stdio: ["pipe", "pipe", "pipe"],
       });
     } catch (error) {
-      const message =
-        error.code === "ENOENT"
-          ? `Execution tool not found: ${command}`
-          : `Failed to start execution tool: ${error.message}`;
+      console.error("🚀 [EXEC_FATAL_START_ERROR]", error);
+      const message = `Failed to start execution tool: ${error.message}`;
       reject(new ExecutionSystemError(message, { command, args, code: error.code }));
       return;
     }
@@ -100,13 +101,21 @@ const runProcess = ({ command, args, cwd, input = "", timeoutMs, outputLimit = M
     });
 
     child.on("error", (error) => {
+      console.error("❌ [CHILD_PROCESS_ERROR]", { 
+        command, 
+        args, 
+        error: error.message,
+        path: process.env.PATH?.split(path.delimiter).slice(0, 5) // Log first 5 PATH entries for debug
+      });
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      const message =
-        error.code === "ENOENT"
-          ? `Execution tool not found: ${command}`
-          : `Failed to start execution tool: ${error.message}`;
+      
+      let message = `Execution tool error: ${error.message}`;
+      if (error.code === "ENOENT") {
+        message = `Execution tool not found: "${command}". Please ensure it is installed and in your system PATH. (Detected Platform: ${process.platform})`;
+      }
+      
       finishReject(new ExecutionSystemError(message, { command, args, code: error.code }));
     });
 
@@ -150,7 +159,7 @@ const checkCommand = async (candidate) => {
       command: candidate.command,
       args: candidate.versionArgs,
       cwd: process.cwd(),
-      timeoutMs: 2500,
+      timeoutMs: 5000,
       outputLimit: 2000,
     });
     const available = result.exitCode === 0 && !result.timedOut && !result.outputLimitExceeded;

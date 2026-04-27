@@ -57,6 +57,11 @@ const liveSessionSchema = new mongoose.Schema({
     topParticipants: [Object],
     raisedHands:    Number,
   },
+  lastCodeSnapshot: {
+    code:     { type: String, default: "" },
+    language: { type: String, default: "cpp" },
+    activeEditor: { type: String, default: null },
+  }
 }, { timestamps: true });
 
 liveSessionSchema.index({ courseId: 1 });
