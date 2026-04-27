@@ -45,7 +45,8 @@ const InstructorSessionHistory = () => {
         </button>
         <InstructorLiveDashboard 
           sessionId={selectedSessionId} 
-          isHistorical={true} 
+          isLive={false}
+          isHistorical={true}
           onClose={() => setSelectedSessionId(null)} 
         />
       </div>

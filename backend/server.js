@@ -161,6 +161,11 @@ const roomPinnedMessages = new Map();
 const roomClosedPollResults = new Map();
 // Poll auto-close timers: roomId → timeoutId
 const pollTimers = new Map();
+// Raised hands state (for sync on join/refresh): roomId → Map<userId, {user, timestamp}>
+const roomRaisedHands = new Map();
+// Blacklist to prevent kicked students from rejoining the same session
+const roomKickedUsers = new Map();
+exports.roomKickedUsers = roomKickedUsers;
 // Phase 3 analytics: sessionId → { activeStudents, raisedHands, messages, pollResponses, boardDraws }
 const liveCache = new Map();
 // Board version tracking for undo race condition prevention
@@ -295,6 +300,7 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
       
       // 4.1 Force-Finalize Attendance for all active participants (Bug 11 Fix)
       // Ensures stars like Alpha get credited for their time until the very end
+      const nowMs = new Date();
       if (cache?.activeSockets) {
         const activeUserIds = Array.from(cache.activeSockets.keys());
         if (activeUserIds.length > 0) {
@@ -304,14 +310,14 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
             });
 
             const finalizeOps = activeDocs.map(att => {
-                const lastSeen = att.lastSeenAt ? new Date(att.lastSeenAt).getTime() : att.joinedAt ? new Date(att.joinedAt).getTime() : now.getTime();
-                const delta = Math.floor((now.getTime() - lastSeen) / 1000);
+                const lastSeen = att.lastSeenAt ? new Date(att.lastSeenAt).getTime() : att.joinedAt ? new Date(att.joinedAt).getTime() : nowMs.getTime();
+                const delta = Math.floor((nowMs.getTime() - lastSeen) / 1000);
                 return {
                     updateOne: {
                         filter: { _id: att._id },
                         update: { 
                             $inc: { activeSeconds: Math.max(0, delta) },
-                            $set: { lastSeenAt: now, status: "left", leftAt: now }
+                            $set: { lastSeenAt: nowMs, status: "left", leftAt: nowMs }
                         }
                     }
                 };
@@ -345,12 +351,21 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
         }
 
         // [Production Hardening] Derive engagement score based on confirmed breakdown
+        const bufferMetrics = cache?.engagementBuffer?.get(att.userId?.toString()) || { chat:0, polls:0, board:0, hands:0 };
         const b = att.engagementBreakdown || {};
+        
+        const finalBreakdown = {
+          chat:  (b.chat || 0) + (bufferMetrics.chat || 0),
+          polls: (b.polls || 0) + (bufferMetrics.polls || 0),
+          board: (b.board || 0) + (bufferMetrics.board || 0),
+          hands: (b.hands || 0) + (bufferMetrics.hands || 0),
+        };
+
         const calculatedScore = 
-          (b.chat || 0) * 1 +
-          (b.polls || 0) * 2 +
-          (b.board || 0) * 2 +
-          (b.hands || 0) * 2;
+          (finalBreakdown.chat) * 1 +
+          (finalBreakdown.polls) * 2 +
+          (finalBreakdown.board) * 2 +
+          (finalBreakdown.hands) * 2;
 
         // Late join detection (> 5 min)
         const joinTime = att.joinedAt ? new Date(att.joinedAt).getTime() : 0;
@@ -365,7 +380,8 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
             filter: { _id: att._id },
             update: { $set: { 
               attendanceStatus: status,
-              engagementScore: calculatedScore 
+              engagementScore: calculatedScore,
+              engagementBreakdown: finalBreakdown
             } }
           }
         };
@@ -483,6 +499,8 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
     roomPinnedMessages.delete(roomId);
     roomClosedPollResults.delete(roomId);
     roomBoardVersions.delete(roomId);
+    roomRaisedHands.delete(roomId);
+    roomKickedUsers.delete(roomId);
     
     if (pollTimers.has(roomId)) {
       clearTimeout(pollTimers.get(roomId));
@@ -799,6 +817,14 @@ io.on("connection", (socket) => {
         });
         return;
       }
+
+      if (roomKickedUsers.has(roomId) && roomKickedUsers.get(roomId).has(userId)) {
+        joinLog("join-room:kicked-user-rejected");
+        socket.emit("room-join-error", {
+          message: "You have been removed from this session by the instructor.",
+        });
+        return;
+      }
     } catch (err) {
       console.error(`🛑 join-room rejected: ${err.message} (Socket: ${socket.id}, Token length: ${authToken?.length})`);
       socket.emit("room-join-error", {
@@ -1040,6 +1066,12 @@ io.on("connection", (socket) => {
         socket.emit("message-pinned", roomPinnedMessages.get(roomId));
       }
 
+      // Sync raised hands (to new joiners)
+      if (roomRaisedHands.has(roomId)) {
+        const hands = Array.from(roomRaisedHands.get(roomId).values());
+        hands.forEach(h => socket.emit("hand-raised", h));
+      }
+
       socket.on("request-board-state", () => {
         socket.emit("BOARD_STATE", roomBoardStates.get(roomId) || []);
       });
@@ -1110,7 +1142,23 @@ io.on("connection", (socket) => {
       const interval = setInterval(() => {
         const cache = liveCache.get(sid);
         if (cache) {
-          io.to(roomId).emit("live-metrics", cache);
+          const timelineObj = {};
+          if (cache.timeline instanceof Map) {
+            cache.timeline.forEach((v, k) => {
+              const { activeUsersSet, ...rest } = v;
+              timelineObj[k] = { ...rest, active: activeUsersSet?.size || 0 };
+            });
+          }
+          const engagementObj = {};
+          if (cache.engagementBuffer instanceof Map) {
+            cache.engagementBuffer.forEach((v, k) => { engagementObj[k] = v; });
+          }
+          io.to(roomId).emit("live-metrics", {
+            ...cache,
+            timeline: timelineObj,
+            engagementBuffer: engagementObj,
+            activeSockets: undefined,
+          });
         } else {
           // If no cache, this session probably ended; kill the interval
           clearInterval(sessionMetricsIntervals.get(sid));
@@ -1129,10 +1177,18 @@ socket.on("raise-hand", ({ roomId, user }) => {
     // Room-lock: reject events if session has already ended
     if (!roomParticipants.has(roomId)) return;
 
-    io.to(roomId).emit("hand-raised", {
+    const payload = {
       user,
       timestamp: Date.now(),
-    });
+    };
+
+    // PERSISTENCE: Store in room state for sync on refresh/late-join
+    if (!roomRaisedHands.has(roomId)) {
+      roomRaisedHands.set(roomId, new Map());
+    }
+    roomRaisedHands.get(roomId).set(user.id, payload);
+
+    io.to(roomId).emit("hand-raised", payload);
 
     logEvent({
       sessionId: socket.data.sessionId,
@@ -1150,12 +1206,22 @@ socket.on("raise-hand", ({ roomId, user }) => {
     if (!roomId || !userId) return;
     if (!roomParticipants.has(roomId)) return;
 
+    // PERSISTENCE: Remove from room state
+    if (roomRaisedHands.has(roomId)) {
+      roomRaisedHands.get(roomId).delete(userId);
+    }
+
     io.to(roomId).emit("hand-lowered", { userId });
   });
 
   socket.on("RESOLVE_HAND", ({ roomId, userId, name }) => {
      if (!roomId || !userId || socket.data.role !== "instructor") return;
      
+     // PERSISTENCE: Remove from room state
+     if (roomRaisedHands.has(roomId)) {
+       roomRaisedHands.get(roomId).delete(userId);
+     }
+
      // 1. Grant Mic permission
      const ctrl = initSessionControls(roomId);
      ctrl.mutedUsers.delete(userId);
@@ -1196,7 +1262,7 @@ socket.on("raise-hand", ({ roomId, user }) => {
       type: msgType,
       userId: socket.data.userId,
       timestamp: now,
-      msgId: uuidv4(), // Unique ID for delivery tracking
+      msgId: message.msgId || uuidv4(), // Preserve client msgId for dedup, fallback to server UUID
     };
 
     io.to(roomId).emit("receive-message", outgoing);
@@ -1224,6 +1290,44 @@ socket.on("raise-hand", ({ roomId, user }) => {
 
     roomPinnedMessages.set(roomId, message);
     io.to(roomId).emit("message-pinned", message);
+  });
+
+  socket.on("unpin-message", ({ roomId }) => {
+    if (!roomId || socket.data.role !== "instructor") return;
+    roomPinnedMessages.delete(roomId);
+    io.to(roomId).emit("message-unpinned");
+  });
+
+  socket.on("delete-message", ({ roomId, msgId }) => {
+    if (!roomId || !msgId || socket.data.role !== "instructor") return;
+    io.to(roomId).emit("message-deleted", { msgId });
+  });
+
+  socket.on("kick-user", ({ roomId, userId, reason }) => {
+    if (!roomId || !userId || socket.data.role !== "instructor") return;
+    
+    if (!roomKickedUsers.has(roomId)) {
+      roomKickedUsers.set(roomId, new Set());
+    }
+    roomKickedUsers.get(roomId).add(userId);
+
+    // Find the socket(s) for this user in this room
+    const cache = liveCache.get(String(socket.data.sessionId));
+    const userSockets = cache?.activeSockets?.get(userId);
+    
+    if (userSockets) {
+      userSockets.forEach(sid => {
+        const targetSocket = io.sockets.sockets.get(sid);
+        if (targetSocket) {
+          targetSocket.emit("KICKED", { reason: reason || "Moderator removed you from the room." });
+          targetSocket.leave(roomId);
+          targetSocket.disconnect(true);
+        }
+      });
+    }
+    
+    io.to(roomId).emit("USER_KICKED", { userId, name: "Student" }); // Notify others
+    emitParticipants(roomId);
   });
 
   // ─── POLLS ────────────────────────────────────────────────────────────────
@@ -1261,6 +1365,10 @@ socket.on("raise-hand", ({ roomId, user }) => {
       // Re-fetch state to see if poll is still active
       const currentPollData = roomPolls.get(roomId);
       if (currentPollData?.activePoll?.id === newPoll.id) {
+        
+        // PERSIST TO DB before clearing
+        persistPollResults(roomId, socket.data.sessionId).catch(e => console.error("Poll auto-close persist failed:", e));
+
         // Trigger manual close logic
         const { options, votes } = currentPollData.activePoll;
         const finalTally = {};

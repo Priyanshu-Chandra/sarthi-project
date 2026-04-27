@@ -1,6 +1,6 @@
 const LiveSession   = require("../models/LiveSession");
 const LiveAttendance = require("../models/LiveAttendance");
-const LiveEvent     = require("../models/LiveEvent");
+const PollResult     = require("../models/PollResult");
 const mongoose      = require("mongoose");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,54 +78,81 @@ exports.getSessionSummary = async (req, res) => {
     }
 
     // ── FALLBACK FOR LEGACY DATA (If no summaryCache) ───────────────────────
-    
-    const attendanceStats = await LiveAttendance.aggregate([
-      { $match: { sessionId: new mongoose.Types.ObjectId(sessionId) } },
-      {
-        $group: {
-          _id: null,
-          totalAttended:    { $sum: 1 },
-          avgActiveSeconds: { $avg: "$activeSeconds" },
-          avgEngagement:    { $avg: "$engagementScore" },
-        },
-      },
-    ]);
+    // Recompute all metrics on the fly from raw attendance + event data.
 
-    const stats = attendanceStats[0] || { totalAttended: 0, avgActiveSeconds: 0, avgEngagement: 0 };
-
-    // Top 5 participants (highest engagement)
-    const topParticipants = await LiveAttendance.find({ sessionId })
-      .sort({ engagementScore: -1 })
-      .limit(5)
+    const allAttendances = await LiveAttendance.find({ sessionId })
       .populate("userId", "firstName lastName email");
-
-    // Low-engagement students (score < 2 = silent the whole class)
-    const lowEngagement = await LiveAttendance.find({ sessionId, engagementScore: { $lt: 2 } })
-      .populate("userId", "firstName lastName email");
-
-    // Event breakdown counts
-    const eventCounts = await LiveEvent.aggregate([
-      { $match: { sessionId: new mongoose.Types.ObjectId(sessionId) } },
-      { $group: { _id: "$type", count: { $sum: 1 } } },
-    ]);
-    const eventMap = {};
-    eventCounts.forEach(e => { eventMap[e._id] = e.count; });
 
     const durationSeconds = session.endedAt
       ? Math.floor((new Date(session.endedAt) - new Date(session.startedAt)) / 1000)
-      : null;
+      : 1;
+
+    let activeCount = 0, passiveCount = 0, dropoffCount = 0, lateCount = 0, unstableCount = 0;
+    const sessionStart = session.startedAt ? new Date(session.startedAt).getTime() : 0;
+
+    allAttendances.forEach(att => {
+      const ratio = att.activeSeconds / durationSeconds;
+      if (att.activeSeconds >= 30) {
+        if (ratio >= 0.6) activeCount++;
+        else if (ratio >= 0.2) passiveCount++;
+        else dropoffCount++;
+      } else {
+        dropoffCount++;
+      }
+      if (att.joinedAt && (new Date(att.joinedAt).getTime() - sessionStart > 5 * 60 * 1000)) lateCount++;
+      if (att.rejoinCount > 3) unstableCount++;
+    });
+
+    const totalStudents = allAttendances.length || 1;
+
+    // Build insights
+    const insights = [];
+    if (dropoffCount / totalStudents > 0.3) insights.push({ level: "high",   msg: "High drop-off detected mid-session" });
+    if (unstableCount / totalStudents > 0.2) insights.push({ level: "high",   msg: "Many students faced connection instability" });
+    if (lateCount / totalStudents > 0.2)     insights.push({ level: "low",    msg: "Significant number of late joiners" });
+    insights.push({ level: "low", msg: `Average active time: ${Math.round((allAttendances.reduce((s, a) => s + a.activeSeconds, 0) / totalStudents) / 60)} min per student` });
+
+    // Top 5 by engagement score
+    const topParticipants = [...allAttendances]
+      .sort((a, b) => b.engagementScore - a.engagementScore)
+      .slice(0, 5)
+      .map(a => ({
+        userId:          a.userId?._id,
+        name:            a.userId ? `${a.userId.firstName} ${a.userId.lastName}` : "Unknown",
+        email:           a.userId?.email,
+        engagementScore: a.engagementScore,
+        activeMinutes:   Math.round(a.activeSeconds / 60),
+        rejoinCount:     a.rejoinCount,
+        status:          a.attendanceStatus || "active",
+      }));
 
     return res.status(200).json({
       success: true,
       summary: {
         sessionId,
-        course:          session.courseId?.courseName || "Unknown",
-        instructor:      session.instructorId ? `${session.instructorId.firstName} ${session.instructorId.lastName}` : "Unknown",
-        startedAt:       session.startedAt,
-        endedAt:         session.endedAt,
-        status:          session.status,
-        topParticipants: [],
-        insights:        []
+        course:           session.courseId?.courseName || "Unknown",
+        instructor:       session.instructorId ? `${session.instructorId.firstName} ${session.instructorId.lastName}` : "Unknown",
+        startedAt:        session.startedAt,
+        endedAt:          session.endedAt,
+        durationSeconds,
+        status:           session.status,
+        endedReason:      session.endedReason,
+        expectedStudents: session.expectedStudents,
+        totalAttended:    totalStudents,
+        attendanceRate:   session.expectedStudents
+          ? Math.round((totalStudents / session.expectedStudents) * 100) : null,
+        activeCount,
+        passiveCount,
+        dropoffCount,
+        lateJoiners:      lateCount,
+        unstableCount,
+        raisedHands:      session.raisedHands || 0,
+        messages:         session.messages || 0,
+        polls:            session.pollResponses || 0,
+        board:            session.boardDraws || 0,
+        timeline:         session.engagementTimeline || [],
+        insights,
+        topParticipants,
       },
     });
   } catch (err) {
@@ -198,10 +225,42 @@ exports.getSessionStudents = async (req, res) => {
         rejoinCount:     a.rejoinCount,
         status:          a.attendanceStatus || a.status,
         atRisk:          a.attendanceStatus === "dropoff",
+        breakdown:       a.engagementBreakdown || { chat:0, polls:0, board:0, hands:0 }
       })),
     });
   } catch (err) {
     console.error("getSessionStudents error:", err);
     return res.status(500).json({ success: false, message: "Failed to load students", error: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/live-analytics/session/:sessionId/polls
+// Returns all poll results recorded during the session.
+// ─────────────────────────────────────────────────────────────────────────────
+exports.getSessionPolls = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+      return res.status(400).json({ success: false, message: "Invalid sessionId" });
+    }
+
+    const polls = await PollResult.find({ sessionId }).sort({ createdAt: 1 });
+
+    return res.status(200).json({
+      success: true,
+      polls: polls.map(p => ({
+        id:         p.pollId,
+        question:   p.question,
+        options:    p.options,
+        tally:      p.tally instanceof Map ? Object.fromEntries(p.tally) : p.tally,
+        totalVotes: p.totalVotes,
+        createdAt:  p.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error("getSessionPolls error:", err);
+    return res.status(500).json({ success: false, message: "Failed to load polls", error: err.message });
   }
 };

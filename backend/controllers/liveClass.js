@@ -320,6 +320,16 @@ exports.validateLiveClass = async (req, res) => {
       });
     }
 
+    // ── Block Kicked Users ──────────────────────────────────────────────────
+    const { roomKickedUsers } = require("../server");
+    if (roomKickedUsers && roomKickedUsers.has(roomId) && roomKickedUsers.get(roomId).has(userId.toString())) {
+      console.log(`🚫 Kicked user ${userId} blocked at HTTP validate for room ${roomId}`);
+      return res.status(403).json({
+        success: false,
+        message: "You have been removed from this session by the instructor.",
+      });
+    }
+
     // Standardize role for frontend consumption (consistent with server.js)
     const role = isInstructor ? "instructor" : "student";
     console.log(`✅ Access granted | Role: ${role} | Course: ${course.courseName}`);

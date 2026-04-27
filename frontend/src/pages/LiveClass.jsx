@@ -56,6 +56,7 @@ export default function LiveClass() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [liveMetrics, setLiveMetrics]     = useState(null);
   const [sessionId, setSessionId]         = useState(null);
+  const [isClassLive, setIsClassLive]     = useState(true); // false = class ended, show post-session report
 
   // ── Smart Board V2 State ─────────────────────────────────────────────────
   const [brushColor, setBrushColor] = useState("#FFD700");
@@ -69,6 +70,13 @@ export default function LiveClass() {
   const [isReady, setIsReady]             = useState(false);
   const [socketReady, setSocketReady]     = useState(false);
   const [zegoReady, setZegoReady]         = useState(false);
+  const [zegoKitToken, setZegoKitToken]   = useState(null);
+  const [zegoUniqueIdState, setZegoUniqueIdState] = useState(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
   const [connectionStep, setConnectionStep] = useState("Waiting for access check...");
   const [isMuted, setIsMuted]             = useState(false);
   const [activeDrawer, setActiveDrawer]   = useState(null);
@@ -87,6 +95,20 @@ export default function LiveClass() {
   const [isMobile, setIsMobile]           = useState(window.innerWidth < 768);
   const [viewMode, setViewMode]           = useState("default"); // default | board | discussion
   const [sidebarTab, setSidebarTab] = useState("chat");    // chat | people | polls
+
+  // ── Defensive date formatter to prevent "Invalid Date" ───────────────────
+  const formatTime = (ts) => {
+    if (!ts) return "";
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+  const formatTimeWithSeconds = (ts) => {
+    if (!ts) return "";
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleTimeString([], { minute: "2-digit", second: "2-digit" });
+  };
   const [pollTimeLeft, setPollTimeLeft]   = useState(0);
   const didConnectSocketRef = useRef(false);
 
@@ -213,7 +235,11 @@ export default function LiveClass() {
   }, []);
 
   const handleUndo = () => {
-    if (!roomId) return;
+    if (!roomId || boardHistoryRef.current.length === 0) return;
+    // ✅ FIX: Optimistic local undo — remove last stroke immediately for instant feedback
+    boardHistoryRef.current.pop();
+    setHistoryCount(boardHistoryRef.current.length);
+    redrawCanvas(boardHistoryRef.current);
     socket.emit("undo-stroke", { roomId });
   };
 
@@ -222,7 +248,11 @@ export default function LiveClass() {
     strokes.forEach((stroke) => {
       // golden rule: skip server echoes of our own strokes
       if (stroke.userId === user?._id?.toString()) return;
-      boardHistoryRef.current.push(stroke);
+      // ✅ FIX: Don't add remote eraser strokes to history
+      const isEraser = stroke.tool?.type === "eraser" || stroke.tool === "eraser";
+      if (!isEraser) {
+        boardHistoryRef.current.push(stroke);
+      }
       drawStroke(stroke);
     });
     setHistoryCount(boardHistoryRef.current.length);
@@ -330,7 +360,7 @@ export default function LiveClass() {
           { Authorization: `Bearer ${token}` }
         );
 
-        if (!isMounted) {
+        if (!isMountedRef.current) {
           console.log("📍 [Unified Init] Component unmounted during validation. Aborting.");
           return;
         }
@@ -339,6 +369,7 @@ export default function LiveClass() {
           console.error("📍 [Unified Init] Validation Failed:", valRes?.data?.message);
           setErrorMsg(valRes?.data?.message || "You are not authorized to join this class.");
           setValidated(false);
+          setValidating(false);
           isInitializingRef.current = false;
           return;
         }
@@ -370,12 +401,13 @@ export default function LiveClass() {
           { Authorization: `Bearer ${token}` }
         );
 
-        if (!isMounted) return;
+        if (!isMountedRef.current) return;
 
         if (!tokenRes?.data?.success) {
            console.error("📍 [Unified Init] Token Request Failed:", tokenRes?.data?.message);
            setErrorMsg(tokenRes?.data?.message || "Failed to get video server token.");
            setValidated(false);
+           setValidating(false);
            isInitializingRef.current = false;
            return;
         }
@@ -391,73 +423,106 @@ export default function LiveClass() {
           zegoUniqueId, 
           userName
         );
-
-        // 3. Join Room
-        console.log("📍 [Unified Init] 3. Calling Zego joinRoom with ID:", zegoUniqueId);
-        setConnectionStep("Launching video interface...");
-        const zp = ZegoUIKitPrebuilt.create(kitToken);
-        zpRef.current = zp;
-
-        // ✅ CRITICAL FIX: Wait for React to render the container
-        // Since setValidating(false) was just called, the DOM hasn't updated yet.
-        let retries = 0;
-        while (!meetingRef.current && retries < 40) {
-          await new Promise(r => setTimeout(r, 50));
-          retries++;
-        }
         
-        if (!meetingRef.current) {
-           throw new Error("Video container failed to render in time.");
-        }
-
-        await zp.joinRoom({
-          container: meetingRef.current,
-          scenario: { mode: ZegoUIKitPrebuilt.VideoConference },
-          showPreJoinView: false,
-          showScreenSharingButton: true,
-          showUserList: false,
-          showAudioVideoSettingsButton: true,
-          showTextChat: false,
-          showMySelfTimer: false,
-          showLayoutButton: false,
-          showRemoveUserButton: userRole === "instructor",
-          layout: "Grid",
-          onJoinRoom: () => {
-            console.log("📍 [Unified Init] ✅ onJoinRoom Fired! Classroom is Ready.");
-            if (isMounted) setZegoReady(true);
-          },
-          onLeaveRoom: () => {
-            console.log("📍 [Unified Init] 🚪 onLeaveRoom Fired.");
-            // If instructor leaves using the red button, end the entire session
-            if (role === "instructor") {
-              endClass();
-            }
-            // Navigate out of the live class view for everyone
-            setTimeout(() => navigate(-1), 500);
-          }
-        });
+        setZegoKitToken(kitToken);
+        setZegoUniqueIdState(zegoUniqueId);
+        isInitializingRef.current = false;
 
       } catch (err) {
-        console.error("📍 [Unified Init] ❌ Fatal Error:", err);
-        if (isMounted) {
-          setErrorMsg("A connection error occurred. Please try again.");
-          setValidated(false);
-        }
-      } finally {
-        if (isMounted) isInitializingRef.current = false;
+        console.error("📍 [Unified Init] Fatal Error:", err);
+        setErrorMsg(err.response?.data?.message || "An unexpected error occurred while joining the class.");
+        setValidated(false);
+        setValidating(false);
+        isInitializingRef.current = false;
       }
     };
 
     performUnifiedInitialization();
 
     return () => {
-      isMounted = false;
       if (zpRef.current) {
         zpRef.current.destroy();
         zpRef.current = null;
       }
     };
   }, [roomId, token, user?._id]); 
+
+  // ─── NEW: Zego Join Room ──────────────────────────────────────────────────
+  // Wait for Socket to be ready AND permissions to be loaded before starting video
+  useEffect(() => {
+    const initZego = async () => {
+      if (!zegoKitToken || !socketReady || !permissions || !meetingRef.current || zpRef.current) return;
+      if (errorMsg) return; // Abort if kicked or error
+
+      console.log("📍 [Unified Init] 3. Calling Zego joinRoom with ID:", zegoUniqueIdState);
+      setConnectionStep("Launching video interface...");
+      const zp = ZegoUIKitPrebuilt.create(zegoKitToken);
+      zpRef.current = zp;
+
+      await zp.joinRoom({
+        container: meetingRef.current,
+        scenario: { mode: ZegoUIKitPrebuilt.VideoConference },
+        showPreJoinView: false,
+        
+        // ✨ DYNAMIC INITIAL PERMISSIONS
+        turnOnMicrophoneWhenJoining: permissions?.canSpeak !== false,
+        turnOnCameraWhenJoining: permissions?.canVideo !== false,
+        showMyCameraToggleButton: permissions?.canVideo !== false,
+        showMyMicrophoneToggleButton: permissions?.canSpeak !== false,
+        showScreenSharingButton: permissions?.canShareScreen !== false,
+
+        showUserList: false,
+        showAudioVideoSettingsButton: true,
+        showTextChat: false,
+        showMySelfTimer: false,
+        showLayoutButton: false,
+        showRemoveUserButton: userRole === "instructor",
+        layout: "Grid",
+        onJoinRoom: () => {
+          console.log("📍 [Unified Init] ✅ onJoinRoom Fired! Classroom is Ready.");
+          if (isMountedRef.current) setZegoReady(true);
+        },
+        onLeaveRoom: () => {
+          console.log("📍 [Unified Init] 🚪 onLeaveRoom Fired.");
+          // If instructor leaves using the red button, end the entire session
+          if (userRole === "instructor") {
+            endClass();
+          }
+          // Navigate out of the live class view for everyone
+          setTimeout(() => navigate(-1), 500);
+        },
+        // Enforce permission when a local stream is created (e.g. screen share attempt)
+        onLocalStreamUpdated: (state, streamId, stream) => {
+          console.log("📍 [Zego] onLocalStreamUpdated:", state, streamId);
+          if (state === "created" && zpRef.current?.express) {
+            const perms = permissions || {};
+            if (!perms.canShareScreen) {
+              zpRef.current.express.stopPublishingStream();
+              toast.error("Screen sharing is not allowed by the instructor.");
+            }
+          }
+        },
+        onScreenSharingStreamUpdated: (state, streamId, stream) => {
+          if ((state === "created" || state === "published") && zpRef.current?.express) {
+            const perms = permissions || {};
+            if (!perms.canShareScreen) {
+              zpRef.current.express.stopPublishingStream();
+              toast.error("Screen sharing is not allowed by the instructor.");
+            }
+          }
+        },
+        onCameraStateUpdated: (state) => {
+          console.log("📍 [Zego] onCameraStateUpdated:", state);
+        },
+        onMicrophoneStateUpdated: (state) => {
+          console.log("📍 [Zego] onMicrophoneStateUpdated:", state);
+        }
+      });
+    };
+    initZego();
+
+  }, [zegoKitToken, socketReady, permissions, zegoUniqueIdState, userRole, errorMsg]);
+
 
   // Socket room join for realtime chat, raise-hand, and polls.
   useEffect(() => {
@@ -521,14 +586,24 @@ export default function LiveClass() {
 
       const isRevoked = !allow;
 
-      setPermissions((prev) => {
-        // Zego Enforcement: If permission is revoked, sync with SDK
-        if (isRevoked && zpRef.current) {
-          if (key === "canSpeak") zpRef.current.muteMicrophone?.();
-          if (key === "canVideo") zpRef.current.turnOffCamera?.();
-          if (key === "canShareScreen") zpRef.current.stopSharingScreen?.();
+      // Execute Zego side-effects outside the state updater!
+      if (zpRef.current?.express) {
+        try {
+          if (key === "canSpeak") {
+            zpRef.current.express.mutePublishStreamAudio(!allow);
+          }
+          if (key === "canVideo") {
+            zpRef.current.express.mutePublishStreamVideo(!allow);
+          }
+          if (key === "canShareScreen") {
+            if (!allow) zpRef.current.express.stopPublishingStream();
+          }
+        } catch (e) {
+          console.warn("📍 [Zego] Express failed to apply permission:", e);
         }
+      }
 
+      setPermissions((prev) => {
         // UX: Toast notification with throttling
         if (!isAuto) {
           const now = Date.now();
@@ -571,6 +646,7 @@ export default function LiveClass() {
       liveLog("socket:participants-updated", { count: nextParticipants?.length || 0 });
       setParticipants(nextParticipants);
     };
+
 
     const handleRoomJoinError = ({ message }) => {
       setSocketReady(false);
@@ -638,13 +714,14 @@ export default function LiveClass() {
     socket.on("ALL_MUTED",      handleAllMuted);
     socket.on("ALL_UNMUTED",    handleAllUnmuted);
     const handleHandRaised = (data) => {
-      const uid = data.user.id?.toString();
+      const uid = data.user?.id?.toString();
       if (!uid) return;
 
       setRaisedHands((prev) => {
         // Map-based Deduplication (Instructor overwrite/refresh)
-        const map = new Map(prev.map(h => [h.user.id?.toString(), h]));
-        map.set(uid, { ...data, timestamp: Date.now() });
+        const map = new Map(prev.map(h => [h.user?.id?.toString(), h]));
+        // ✅ FIX: Normalize data so renderPeopleSection can use flat hand.id and hand.name
+        map.set(uid, { ...data, id: uid, name: data.user?.name || "User", timestamp: Date.now() });
         return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp);
       });
 
@@ -740,8 +817,12 @@ export default function LiveClass() {
       // ── Idempotency: Skip server echoes of our own strokes (Golden Rule) ──
       if (stroke.userId === user?._id?.toString()) return;
 
-      boardHistoryRef.current.push(stroke);
-      setHistoryCount(boardHistoryRef.current.length);
+      // ✅ FIX: Don't add remote eraser strokes to history
+      const isEraser = stroke.tool?.type === "eraser" || stroke.tool === "eraser";
+      if (!isEraser) {
+        boardHistoryRef.current.push(stroke);
+        setHistoryCount(boardHistoryRef.current.length);
+      }
       drawStroke(stroke);
 
       if (stroke.userId) {
@@ -762,16 +843,39 @@ export default function LiveClass() {
       }));
     };
 
-    const handleSessionEnded = (msg) => {
-      /* toast.success(msg || "The live class has ended.");
+    const handleSessionEnded = () => {
       hasEndedRef.current = true;
-      setTimeout(() => navigate(-1), 2000); */
+      setIsClassLive(false); // Switch dashboard to post-session analytics mode
+      if (userRole === "instructor") {
+        // Show the post-class analytics report automatically
+        toast.success("Class ended — opening your session report!", { duration: 4000 });
+        setTimeout(() => setShowDashboard(true), 1500);
+      } else {
+        toast("The class has ended.", { icon: "🎓", duration: 3000 });
+        setTimeout(() => navigate(-1), 3000);
+      }
     };
 
     const handleInstructorLeft = () => {
-      /* toast.error("Instructor ended the session");
       hasEndedRef.current = true;
-      setTimeout(() => navigate(-1), 2000); */
+      setIsClassLive(false);
+      toast.error("Instructor ended the session.", { duration: 3000 });
+      setTimeout(() => navigate(-1), 3000);
+    };
+
+    const handleKicked = ({ reason }) => {
+      hasEndedRef.current = true;
+      socket.disconnect();
+      if (zpRef.current) {
+        zpRef.current.destroy();
+        zpRef.current = null;
+      }
+      toast.error(`Moderator Action: ${reason || "Removed from room."}`, { duration: 10000 });
+      navigate("/dashboard/enrolled-courses");
+    };
+
+    const handleMessageDeleted = ({ msgId }) => {
+      setMessages(prev => prev.filter(m => m.msgId !== msgId));
     };
 
     const handleSessionId = ({ sessionId: sid }) => { if (sid) setSessionId(sid); };
@@ -780,6 +884,8 @@ export default function LiveClass() {
     socket.on("hand-lowered",       handleHandLowered);
     socket.on("receive-message",    handleReceiveMessage);
     socket.on("message-pinned",     handleMessagePinned);
+    socket.on("message-deleted",    handleMessageDeleted);
+    socket.on("KICKED",             handleKicked);
     socket.on("poll-created",       handlePollCreated);
     socket.on("poll-voted",         handlePollVoted);
     socket.on("poll-closed",        handlePollClosed);
@@ -896,6 +1002,7 @@ export default function LiveClass() {
     }, 5000);
 
     return () => {
+      clearInterval(cursorCleanup);
       socket.off("INITIAL_PERMISSIONS",  handleInitialPermissions);
       socket.off("ROOM_JOIN_SUCCESS",    handleRoomJoinSuccess);
       socket.off("SESSION_READY",        handleSessionReady);
@@ -914,6 +1021,8 @@ export default function LiveClass() {
       socket.off("hand-lowered",       handleHandLowered);
       socket.off("receive-message",    handleReceiveMessage);
       socket.off("message-pinned",     handleMessagePinned);
+      socket.off("message-deleted",    handleMessageDeleted);
+      socket.off("KICKED",             handleKicked);
       socket.off("poll-created",       handlePollCreated);
       socket.off("poll-voted",         handlePollVoted);
       socket.off("poll-closed",        handlePollClosed);
@@ -940,6 +1049,40 @@ export default function LiveClass() {
       if (pollInterval) clearInterval(pollInterval);
     };
   }, [user?._id]);
+
+  // ── Active Permission Enforcement (Fights Zego UI overrides) ──────────
+  useEffect(() => {
+    if (!permissions || !zpRef.current?.express) return;
+    
+    const enforceInterval = setInterval(() => {
+      if (zpRef.current?.express) {
+        if (permissions.canSpeak === false) {
+          try { zpRef.current.express.mutePublishStreamAudio(true); } catch (e) {}
+        }
+        if (permissions.canVideo === false) {
+          try { zpRef.current.express.mutePublishStreamVideo(true); } catch (e) {}
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(enforceInterval);
+  }, [permissions]);
+
+  // ── Bulletproof Permission Sync ──────────────────────────────────────────
+  // If participants update, forcefully sync our own permissions to ensure UI is perfect.
+  useEffect(() => {
+    if (!participants || !user?._id) return;
+    const me = participants.find(p => p.userId?.toString() === user._id.toString());
+    if (me && me.permissions) {
+      setPermissions(prev => {
+        // Only update if there's an actual change to avoid infinite loops
+        if (JSON.stringify(prev) !== JSON.stringify(me.permissions)) {
+          return me.permissions;
+        }
+        return prev;
+      });
+    }
+  }, [participants, user?._id]);
 
   // --- Helper: String to Color (consistent for cursors) ---
   const stringToColor = (str) => {
@@ -1101,7 +1244,7 @@ export default function LiveClass() {
 
       socket.emit("send-message", { roomId, message: tempMsg }, (ack) => {
         setSending(false);
-        if (ack?.status === "ok") {
+        if (ack?.status === "success") {
           setPendingMessages(prev => {
             const next = { ...prev };
             delete next[msgId];
@@ -1127,7 +1270,7 @@ export default function LiveClass() {
       }));
 
       socket.emit("send-message", { roomId, message: msg }, (ack) => {
-        if (ack?.status === "ok") {
+        if (ack?.status === "success") {
           setPendingMessages(prev => {
             const next = { ...prev };
             delete next[msgId];
@@ -1196,6 +1339,21 @@ export default function LiveClass() {
   const pinMessage = (msg) => {
     if (userRole !== "instructor" || !roomId) return;
     socket.emit("pin-message", { roomId, message: msg });
+  };
+
+  const deleteMessage = (msgId) => {
+    if (userRole !== "instructor" || !roomId) return;
+    socket.emit("delete-message", { roomId, msgId });
+    toast.success("Message deleted");
+  };
+
+  const kickUser = (participant) => {
+    if (userRole !== "instructor" || !roomId) return;
+    const reason = window.prompt(`Kick ${participant.name}? Reason:`, "Disruptive behavior");
+    if (reason !== null) {
+      socket.emit("kick-user", { roomId, userId: participant.userId, reason });
+      toast.success(`${participant.name} removed`);
+    }
   };
 
   const createPoll = () => {
@@ -1350,10 +1508,13 @@ export default function LiveClass() {
 
     // Instant local feedback
     drawStroke(stroke);
-    boardHistoryRef.current.push(stroke);
-    setHistoryCount(boardHistoryRef.current.length);
+    // ✅ FIX: Don't add eraser strokes to history — they bloat it and make undo painfully slow
+    if (brushTool !== "eraser") {
+      boardHistoryRef.current.push(stroke);
+      setHistoryCount(boardHistoryRef.current.length);
+    }
 
-    // Add to batch (Pro V2)
+    // Add to batch (Pro V2) — still send eraser strokes for remote sync
     strokeBatchRef.current.push(stroke);
     if (!batchTimeoutRef.current) {
       batchTimeoutRef.current = setTimeout(() => {
@@ -1409,58 +1570,87 @@ export default function LiveClass() {
                {participants
                  .filter((participant) => participant.userId !== user?._id?.toString())
                  .map((participant) => (
-                   <div key={participant.userId} className="rounded-xl border border-white/5 bg-richblack-800/50 p-3 transition-all hover:bg-richblack-800">
-                     <p className="mb-3 text-sm font-bold text-richblack-25 tracking-tight">{participant.name}</p>
-                     <div className="grid grid-cols-2 gap-2">
+                   <div key={participant.userId} className="rounded-2xl border border-white/5 bg-richblack-800/50 p-4 transition-all hover:bg-richblack-800 hover:border-white/10">
+                     {/* Participant Header */}
+                     <div className="flex items-center gap-3 mb-4">
+                       <div className="h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white ring-2 ring-indigo-500/30">
+                         {participant.name?.charAt(0) || "S"}
+                       </div>
+                       <div className="flex-1 min-w-0">
+                         <p className="text-sm font-bold text-white truncate">{participant.name}</p>
+                         <p className="text-[10px] text-white/40 font-black uppercase tracking-widest">Student</p>
+                       </div>
+                       {/* Live Permission Status Dots */}
+                       <div className="flex gap-1.5">
+                         <span className={`h-2.5 w-2.5 rounded-full ${participant.permissions?.canSpeak ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-red-500"}`} title="Mic" />
+                         <span className={`h-2.5 w-2.5 rounded-full ${participant.permissions?.canVideo ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-red-500"}`} title="Camera" />
+                         <span className={`h-2.5 w-2.5 rounded-full ${participant.permissions?.canEditBoard ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-red-500"}`} title="Board" />
+                         <span className={`h-2.5 w-2.5 rounded-full ${participant.permissions?.canShareScreen ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-red-500"}`} title="Screen" />
+                       </div>
+                     </div>
+                     {/* Permission Toggle Grid */}
+                     <div className="grid grid-cols-4 gap-2">
+                       {[
+                         { key: "canSpeak", label: "Mic", icon: "🎤", activeColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", inactiveColor: "bg-red-500/20 text-red-400 border-red-500/30" },
+                         { key: "canVideo", label: "Cam", icon: "📹", activeColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", inactiveColor: "bg-red-500/20 text-red-400 border-red-500/30" },
+                         { key: "canEditBoard", label: "Board", icon: "✏️", activeColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", inactiveColor: "bg-red-500/20 text-red-400 border-red-500/30" },
+                         { key: "canShareScreen", label: "Screen", icon: "🖥️", activeColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", inactiveColor: "bg-red-500/20 text-red-400 border-red-500/30" },
+                       ].map((perm) => {
+                         const isAllowed = participant.permissions?.[perm.key];
+                         return (
+                           <button
+                             key={perm.key}
+                             onClick={() => togglePermission(participant, perm.key)}
+                             className={`group relative flex flex-col items-center gap-1 rounded-xl border p-2.5 transition-all duration-300 hover:scale-105 active:scale-95 ${
+                               isAllowed ? perm.activeColor : perm.inactiveColor
+                             }`}
+                           >
+                             <span className="text-base">{perm.icon}</span>
+                             <span className="text-[8px] font-black uppercase tracking-widest">
+                               {isAllowed ? "ON" : "OFF"}
+                             </span>
+                             <span className="absolute -top-8 left-1/2 -translate-x-1/2 scale-0 rounded-lg bg-richblack-900 px-2 py-1 text-[9px] font-black uppercase tracking-tighter text-white shadow-2xl transition-all group-hover:scale-100 whitespace-nowrap">
+                               {isAllowed ? `Revoke ${perm.label}` : `Allow ${perm.label}`}
+                             </span>
+                           </button>
+                         );
+                       })}
+                     </div>
+                     {userRole === "instructor" && (
                        <button
-                         onClick={() => togglePermission(participant, "canSpeak")}
-                         className={`rounded-lg py-2 text-[10px] font-black uppercase transition-all ${
-                           participant.permissions?.canSpeak ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-red-600 hover:text-white" : "bg-richblack-700 text-richblack-400 hover:bg-emerald-600 hover:text-white"
-                         }`}
+                         onClick={() => kickUser(participant)}
+                         className="mt-3 w-full rounded-xl border border-red-500/30 bg-red-500/10 py-2 text-[10px] font-black uppercase tracking-widest text-red-400 transition-all hover:bg-red-500 hover:text-white"
                        >
-                         {participant.permissions?.canSpeak ? "🎤 Mute" : "🎤 Unmute"}
+                         Kick Student
                        </button>
-                       <button
-                         onClick={() => togglePermission(participant, "canVideo")}
-                         className={`rounded-lg py-2 text-[10px] font-black uppercase transition-all ${
-                           participant.permissions?.canVideo ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-red-600 hover:text-white" : "bg-richblack-700 text-richblack-400 hover:bg-emerald-600 hover:text-white"
-                         }`}
-                       >
-                         {participant.permissions?.canVideo ? "📹 No Cam" : "📹 Allow Cam"}
-                       </button>
-                       <button
-                         onClick={() => togglePermission(participant, "canEditBoard")}
-                         className={`rounded-lg py-2 text-[10px] font-black uppercase transition-all ${
-                           participant.permissions?.canEditBoard ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-red-600 hover:text-white" : "bg-richblack-700 text-richblack-400 hover:bg-emerald-600 hover:text-white"
-                         }`}
-                       >
-                         {participant.permissions?.canEditBoard ? "✏️ Revoke" : "✏️ Allow Board"}
-                       </button>
-                       <button
-                         onClick={() => togglePermission(participant, "canShareScreen")}
-                         className={`rounded-lg py-2 text-[10px] font-black uppercase transition-all ${
-                           participant.permissions?.canShareScreen ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-red-600 hover:text-white" : "bg-richblack-700 text-richblack-400 hover:bg-emerald-600 hover:text-white"
-                         }`}
-                       >
-                         {participant.permissions?.canShareScreen ? "🖥️ Revoke" : "🖥️ Allow Screen"}
-                       </button>
+                     )}
+                   </div>
+                 ))}
+               {participants.filter((p) => p.userId !== user?._id?.toString()).length === 0 && (
+                 <p className="text-center text-[10px] font-black uppercase tracking-widest text-white/20 py-4 italic">No students connected</p>
+               )}
+             </div>
+         ) : (
+           <div className="space-y-3">
+             <div className="rounded-2xl border border-white/5 bg-richblack-800/30 p-4">
+               <p className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">Your Permissions</p>
+               <div className="grid grid-cols-2 gap-2">
+                 {[
+                   { label: "Microphone", key: "canSpeak", icon: "🎤", onText: "Can Speak", offText: "Muted" },
+                   { label: "Camera", key: "canVideo", icon: "📹", onText: "Camera On", offText: "Camera Off" },
+                   { label: "Whiteboard", key: "canEditBoard", icon: "✏️", onText: "Can Edit", offText: "View Only" },
+                   { label: "Screen Share", key: "canShareScreen", icon: "🖥️", onText: "Can Share", offText: "Blocked" },
+                 ].map((p) => (
+                   <div key={p.key} className={`flex items-center gap-2.5 rounded-xl border p-3 transition-all ${permissions?.[p.key] ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/5 text-red-400/60 border-red-500/10"}`}>
+                     <span className="text-lg">{p.icon}</span>
+                     <div className="flex flex-col">
+                       <span className="text-[9px] font-black uppercase tracking-widest text-white/40">{p.label}</span>
+                       <span className="text-[10px] font-bold">{permissions?.[p.key] ? p.onText : p.offText}</span>
                      </div>
                    </div>
                  ))}
-             </div>
-         ) : (
-           <div className="grid grid-cols-2 gap-2 text-[10px] font-black uppercase">
-             {[
-               { label: "Mic", key: "canSpeak", dot: "bg-emerald-500" },
-               { label: "Cam", key: "canVideo", dot: "bg-emerald-500" },
-               { label: "Board", key: "canEditBoard", dot: "bg-emerald-500" },
-               { label: "Screen", key: "canShareScreen", dot: "bg-emerald-500" }
-             ].map(p => (
-               <div key={p.key} className={`flex items-center justify-between rounded-lg p-2.5 ${permissions?.[p.key] ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-richblack-800 text-richblack-500 border border-white/5"}`}>
-                 <span>{p.label}</span>
-                 <span className={`h-1.5 w-1.5 rounded-full ${permissions?.[p.key] ? "bg-emerald-400 animate-pulse" : "bg-richblack-600"}`}></span>
                </div>
-             ))}
+             </div>
            </div>
          )}
        </section>
@@ -1501,7 +1691,7 @@ export default function LiveClass() {
                            )}
                            
                            <div className="text-[10px] text-white/20 font-mono italic">
-                              {new Date(hand.timestamp).toLocaleTimeString([], { minute: '2-digit', second: '2-digit' })}
+                              {formatTimeWithSeconds(hand.timestamp)}
                            </div>
                         </div>
                      ))}
@@ -1552,7 +1742,7 @@ export default function LiveClass() {
                        <p className="text-sm font-black text-white/90 truncate">{group.name}</p>
                        <span className="text-[10px] font-bold text-white/20 whitespace-nowrap">
                          {/* ✅ FIX: group uses lastTimestamp, not timestamp */}
-                        {group.lastTimestamp ? new Date(group.lastTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}
+                        {formatTime(group.lastTimestamp)}
                        </span>
                     </div>
                     <div className="space-y-2">
@@ -1581,12 +1771,20 @@ export default function LiveClass() {
                                 </span>
                             </div>
                             {userRole === "instructor" && (
-                              <button 
-                                onClick={() => pinMessage(msg)} 
-                                className="absolute right-2 top-2 scale-0 group-hover:scale-100 transition-all rounded-xl bg-black/60 px-3 py-1.5 text-[9px] font-black uppercase text-white hover:bg-indigo-600 border border-white/10"
-                              >
-                                Pin
-                              </button>
+                              <div className="absolute right-2 top-2 flex items-center gap-1.5 scale-0 group-hover:scale-100 transition-all">
+                                <button 
+                                  onClick={() => pinMessage(msg)} 
+                                  className="rounded-xl bg-black/60 px-3 py-1.5 text-[9px] font-black uppercase text-white hover:bg-indigo-600 border border-white/10"
+                                >
+                                  Pin
+                                </button>
+                                <button 
+                                  onClick={() => deleteMessage(msg.msgId)} 
+                                  className="rounded-xl bg-black/60 px-3 py-1.5 text-[9px] font-black uppercase text-red-400 hover:bg-red-600 hover:text-white border border-white/10"
+                                >
+                                  Del
+                                </button>
+                              </div>
                             )}
                          </div>
                        ))}
@@ -1805,6 +2003,7 @@ export default function LiveClass() {
           remoteCursors={remoteCursors}
           chatSection={renderChatSection()}
           smooth={smooth}
+          permissions={permissions}
         />
 
         {currentStage.showSidebar && isSidebarOpen && (
@@ -1823,9 +2022,14 @@ export default function LiveClass() {
       {/* DASHBOARD OVERLAY */}
       {userRole === "instructor" && showDashboard && (
         <div className="fixed inset-0 z-[1000] flex animate-in fade-in duration-500">
-           <div className="absolute inset-0 bg-black/95 backdrop-blur-3xl" onClick={() => setShowDashboard(false)} />
+           <div className="absolute inset-0 bg-black/95 backdrop-blur-3xl" onClick={() => !isClassLive ? null : setShowDashboard(false)} />
            <div className="relative mx-auto mt-12 w-full max-w-7xl overflow-hidden rounded-t-[60px] bg-[#0d0d12] border-x border-t border-white/10 shadow-[0_-40px_100px_rgba(0,0,0,0.9)] pb-12">
-              <InstructorLiveDashboard metrics={liveMetrics} sessionId={sessionId} isLive={true} onClose={() => setShowDashboard(false)} />
+              <InstructorLiveDashboard
+                metrics={liveMetrics}
+                sessionId={sessionId}
+                isLive={isClassLive}
+                onClose={() => setShowDashboard(false)}
+              />
            </div>
         </div>
       )}
@@ -1836,11 +2040,13 @@ export default function LiveClass() {
         canUseBoard={canUseBoard}
         brushTool={brushTool}
         setBrushTool={setBrushTool}
+        setBrushSize={setBrushSize}
         brushColor={brushColor}
         setBrushColor={setBrushColor}
         handleUndo={handleUndo}
         historyCount={historyCount}
         userRole={userRole}
+        permissions={permissions}
         clearBoardCanvas={clearBoardCanvas}
         setShowDashboard={setShowDashboard}
         isSidebarOpen={isSidebarOpen}
@@ -1861,7 +2067,7 @@ const MainStage = ({
   viewMode, setViewMode, currentStage, activeStatus, isMobile, 
   meetingRef, boardRef, canUseBoard, activeDrawer, brushSize, 
   startBoardDraw, continueBoardDraw, stopBoardDraw, remoteCursors, 
-  chatSection, smooth 
+  chatSection, smooth, permissions
 }) => {
   return (
     <div className={`flex-1 relative overflow-hidden ${smooth} ${currentStage.bg}`}>
@@ -1890,8 +2096,13 @@ const MainStage = ({
           currentStage.video === "primary" ? "left-4 top-4 md:left-8 md:top-8 h-[40%] md:h-[58%] w-[calc(100%-2rem)] md:w-[calc(100%-4rem)]" :
           currentStage.video === "pip"     ? "right-4 top-12 md:right-10 h-32 w-56 md:h-44 md:w-80 z-40 cursor-pointer ring-[8px] md:ring-[12px] ring-black/40" :
           "hidden"
-        }`}
+        } ${permissions?.canSpeak === false ? "zego-hide-mic" : ""} ${permissions?.canVideo === false ? "zego-hide-cam" : ""} ${permissions?.canShareScreen === false ? "zego-hide-screen" : ""}`}
       >
+         <style>{`
+            .zego-hide-mic div[aria-label="Toggle Microphone"], .zego-hide-mic div[aria-label="Turn off microphone"], .zego-hide-mic div[aria-label="Turn on microphone"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
+            .zego-hide-cam div[aria-label="Toggle Camera"], .zego-hide-cam div[aria-label="Turn off camera"], .zego-hide-cam div[aria-label="Turn on camera"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
+            .zego-hide-screen div[aria-label="Screen sharing"] { display: none !important; opacity: 0 !important; pointer-events: none !important; }
+         `}</style>
          <div id="zego-container" ref={meetingRef} className="h-full w-full" />
          <div className="absolute bottom-4 left-6 rounded-xl bg-black/60 px-4 py-1.5 text-[8px] md:text-[10px] font-black uppercase tracking-widest text-white/50 shadow-2xl backdrop-blur-xl">
            {viewMode === "board" ? "💻 PANEL" : "📡 LIVE"}
@@ -1943,6 +2154,19 @@ const MainStage = ({
             />
           )}
          
+         {/* ✅ VIEW ONLY OVERLAY for students without board permission */}
+         {!canUseBoard && currentStage.board !== "hidden" && (
+           <div className="absolute inset-0 z-[90] flex items-center justify-center pointer-events-none">
+              <div className="flex items-center gap-3 rounded-2xl bg-black/70 px-6 py-3 backdrop-blur-xl border border-white/10 shadow-2xl animate-in fade-in zoom-in-90 duration-500">
+                 <span className="text-xl">🔒</span>
+                 <div className="flex flex-col">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-white/60">Whiteboard</span>
+                    <span className="text-xs font-bold text-white/90">View Only</span>
+                 </div>
+              </div>
+           </div>
+         )}
+         
          {viewMode === "board" && (
            <div className="absolute top-4 left-4 md:top-10 md:left-10 pointer-events-none flex items-center gap-4 animate-in slide-in-from-left-4 duration-1000">
                <div className="flex items-center gap-2 md:gap-4 rounded-2xl md:rounded-3xl bg-black/40 px-4 md:px-6 py-2 md:py-3 text-[9px] md:text-[11px] font-black uppercase tracking-[0.2em] text-white/40 backdrop-blur-3xl border border-white/10 shadow-2xl">
@@ -1988,13 +2212,13 @@ const MainStage = ({
 };
 
 const SidebarTabs = ({ sidebarTab, setSidebarTab, chatSection, peopleSection, pollSection }) => (
-  <div className={`flex h-full w-[400px] flex-col border-l border-white/5 bg-[#0a0a0f] shadow-[calc(-20px)_0_60px_rgba(0,0,0,0.5)] transition-all duration-500 overflow-hidden`}>
+  <div className={`relative z-[100] pointer-events-auto flex h-full w-[400px] flex-col border-l border-white/5 bg-[#0a0a0f] shadow-[calc(-20px)_0_60px_rgba(0,0,0,0.5)] transition-all duration-500 overflow-hidden`}>
     <div className="flex bg-[#07070a] px-8 pt-6 pb-2 gap-8 ring-1 ring-white/5">
       {["chat", "people", "polls"].map((tab) => (
         <button
           key={tab}
           onClick={() => setSidebarTab(tab)}
-          className={`relative pb-3 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${
+          className={`relative pointer-events-auto cursor-pointer pb-3 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${
             sidebarTab === tab ? "text-white" : "text-white/20 hover:text-white/40"
           }`}
         >
@@ -2016,8 +2240,8 @@ const SidebarTabs = ({ sidebarTab, setSidebarTab, chatSection, peopleSection, po
 );
 
 const BottomHUD = ({ 
-  viewMode, setViewMode, canUseBoard, brushTool, setBrushTool, 
-  brushColor, setBrushColor, handleUndo, historyCount, userRole, 
+  viewMode, setViewMode, canUseBoard, brushTool, setBrushTool, setBrushSize,
+  brushColor, setBrushColor, handleUndo, historyCount, userRole, permissions,
   clearBoardCanvas, setShowDashboard, isSidebarOpen, setIsSidebarOpen, 
   hasRaisedHand, lowerHand, raiseHand, onEndClass, smooth 
 }) => (
@@ -2044,8 +2268,8 @@ const BottomHUD = ({
     {viewMode === "board" && canUseBoard && (
       <div className="flex items-center gap-1 border-r border-white/10 pr-6 animate-in zoom-in-90 duration-300">
          <div className="flex items-center gap-1 rounded-2xl bg-white/5 p-1">
-            <button onClick={() => setBrushTool("pen")} className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all ${brushTool === "pen" ? "bg-white text-black shadow-lg" : "text-white/40 hover:text-white"}`}>✏️</button>
-            <button onClick={() => setBrushTool("eraser")} className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all ${brushTool === "eraser" ? "bg-white text-black shadow-lg" : "text-white/40 hover:text-white"}`}>🧽</button>
+            <button onClick={() => { setBrushTool("pen"); setBrushSize(3); }} className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all ${brushTool === "pen" ? "bg-white text-black shadow-lg" : "text-white/40 hover:text-white"}`}>✏️</button>
+            <button onClick={() => { setBrushTool("eraser"); setBrushSize(20); }} className={`h-9 w-9 rounded-xl flex items-center justify-center transition-all ${brushTool === "eraser" ? "bg-white text-black shadow-lg" : "text-white/40 hover:text-white"}`}>🧽</button>
          </div>
          <div className="flex items-center gap-2 px-2">
             {["#FFD700", "#FFFFFF", "#FF5252", "#42A5F5"].map(c => (
@@ -2064,13 +2288,47 @@ const BottomHUD = ({
       </div>
     )}
     <div className="flex items-center gap-4">
+        {/* ✅ Student Permission HUD — always visible in main UI */}
+        {userRole !== "instructor" && permissions && (
+          <div className="flex items-center gap-1.5 rounded-2xl bg-white/5 border border-white/5 px-3 py-2">
+            {[
+              { key: "canSpeak", icon: "🎤", label: "Mic" },
+              { key: "canVideo", icon: "📹", label: "Cam" },
+              { key: "canEditBoard", icon: "✏️", label: "Board" },
+              { key: "canShareScreen", icon: "🖥️", label: "Screen" },
+            ].map((perm) => (
+              <div
+                key={perm.key}
+                className={`group relative flex h-8 w-8 items-center justify-center rounded-xl transition-all ${
+                  permissions[perm.key]
+                    ? "bg-emerald-500/20 text-emerald-400"
+                    : "bg-red-500/10 text-red-400/50"
+                }`}
+                title={`${perm.label}: ${permissions[perm.key] ? "Allowed" : "Blocked"}`}
+              >
+                <span className="text-sm">{perm.icon}</span>
+                {!permissions[perm.key] && (
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <span className="h-px w-4 bg-red-400 rotate-45" />
+                  </span>
+                )}
+                <span className="absolute -top-9 left-1/2 -translate-x-1/2 scale-0 rounded-lg bg-richblack-900 px-2 py-1 text-[9px] font-black uppercase tracking-tighter text-white shadow-2xl transition-all group-hover:scale-100 whitespace-nowrap">
+                  {permissions[perm.key] ? perm.label : `${perm.label} Blocked`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {userRole === "instructor" && (
           <button onClick={() => setShowDashboard(true)} className="group flex items-center gap-2 rounded-2xl bg-yellow-50 px-5 py-2.5 text-[11px] font-black tracking-widest text-black shadow-xl shadow-yellow-500/10 transition-all hover:bg-white hover:scale-105 active:scale-95">
             <span className="animate-pulse group-hover:animate-none">📊</span> ANALYTICS
           </button>
         )}
-        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className={`flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 transition-all ${isSidebarOpen ? "bg-white/10 text-white" : "bg-transparent text-white/40 hover:bg-white/5"}`}>
+        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className={`group relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 transition-all ${isSidebarOpen ? "bg-white/10 text-white" : "bg-transparent text-white/40 hover:bg-white/5"}`}>
           {isSidebarOpen ? "📂" : "📁"}
+          <span className="absolute -top-12 left-1/2 -translate-x-1/2 scale-0 rounded-lg bg-richblack-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-tighter text-white shadow-2xl transition-all group-hover:scale-100">
+            {isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
+          </span>
         </button>
         <div className="flex flex-col items-center">
            <button onClick={hasRaisedHand ? lowerHand : raiseHand} className={`flex items-center gap-2 rounded-2xl px-6 py-2.5 text-[11px] font-black tracking-widest transition-all hover:scale-105 active:scale-95 shadow-xl ${hasRaisedHand ? "bg-pink-600 text-white shadow-pink-500/20" : "bg-indigo-600 text-white shadow-indigo-500/20"}`}>
