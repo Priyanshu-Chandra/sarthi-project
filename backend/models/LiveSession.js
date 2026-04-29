@@ -27,7 +27,7 @@ const liveSessionSchema = new mongoose.Schema({
   },
   endedReason: {
     type: String,
-    enum: ["manual", "timeout", "crash"],
+    enum: ["manual", "completed", "timeout", "crash", "disconnect", "orphaned", "abandoned"],
   },
   expectedStudents: Number,
   presentStudents: Number,
@@ -55,7 +55,13 @@ const liveSessionSchema = new mongoose.Schema({
     unstableCount:  Number, // rejoinCount > 3
     insights:       [Object], // { level: String, msg: String }
     topParticipants: [Object],
+    raisedHands:    Number,
   },
+  lastCodeSnapshot: {
+    code:     { type: String, default: "" },
+    language: { type: String, default: "cpp" },
+    activeEditor: { type: String, default: null },
+  }
 }, { timestamps: true });
 
 liveSessionSchema.index({ courseId: 1 });

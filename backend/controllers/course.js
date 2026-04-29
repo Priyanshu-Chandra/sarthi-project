@@ -308,7 +308,7 @@ exports.getAllCourses = async (req, res) => {
         const allCourses = await Course.find({},
             {
                 courseName: true, courseDescription: true, price: true, thumbnail: true, instructor: true,
-                ratingAndReviews: true, studentsEnrolled: true
+                ratingAndReviews: true, studentsEnrolled: true, isLive: true, liveRoomId: true
             })
             .populate({
                 path: 'instructor',
@@ -481,6 +481,8 @@ exports.getFullCourseDetails = async (req, res) => {
                 totalDuration,
                 completedVideos: courseProgressCount?.completedVideos ? courseProgressCount?.completedVideos : [],
                 certificateEligibility,
+                isLive: courseDetails.isLive || false,
+                liveRoomId: courseDetails.liveRoomId || null,
             },
         })
     } catch (error) {

@@ -8,17 +8,7 @@ const path = require("path");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
 
-// #region agent log
-const DEBUG_SESSION_ID = "2ecb98";
-const DEBUG_LOG_PATH = path.resolve(__dirname, "../debug-2ecb98.log");
-const agentNdjsonLog = (payload) => {
-  try {
-    if (!payload || typeof payload !== "object") return;
-    const line = JSON.stringify({ sessionId: DEBUG_SESSION_ID, ...payload });
-    fs.appendFile(DEBUG_LOG_PATH, `${line}\n`, () => {});
-  } catch (_) {}
-};
-// #endregion agent log
+
 
 // --- Whiteboard Constants ---
 const MAX_STROKES = 5000;
@@ -53,26 +43,7 @@ const PollResult = require("./models/PollResult");
 
 
 // middleware 
-app.use(express.json({
-  strict: true,
-  verify: (req, res, buf) => {
-    try {
-      if (buf && buf.length > 0) JSON.parse(buf);
-    } catch (e) {
-      req.invalidJson = true;
-    }
-  }
-}));
-
-app.use((req, res, next) => {
-  if (req.invalidJson) {
-    return res.status(400).json({
-      success: false,
-      message: "Invalid JSON payload"
-    });
-  }
-  next();
-});
+app.use(express.json());
 app.use(cookieParser());
 app.use(
     cors({
@@ -161,11 +132,39 @@ const roomPinnedMessages = new Map();
 const roomClosedPollResults = new Map();
 // Poll auto-close timers: roomId → timeoutId
 const pollTimers = new Map();
+// Raised hands state (for sync on join/refresh): roomId → Map<userId, {user, timestamp}>
+const roomRaisedHands = new Map();
+// Blacklist to prevent kicked students from rejoining the same session
+const roomKickedUsers = new Map();
+exports.roomKickedUsers = roomKickedUsers;
+// Empty room cleanup grace period: roomId → timeoutId
+const emptyRoomTimers = new Map();
+const EMPTY_ROOM_GRACE_MS = 30 * 1000;
+
+// Boilerplates for various languages
+const DEFAULT_BOILERPLATES = {
+  cpp: "#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << \"Hello, Sarthi!\" << endl;\n    return 0;\n}",
+  c: "#include <stdio.h>\n\nint main() {\n    printf(\"Hello, Sarthi!\\n\");\n    return 0;\n}",
+  java: "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, Sarthi!\");\n    }\n}",
+  python: "print(\"Hello, Sarthi!\")",
+  javascript: "console.log(\"Hello, Sarthi!\");"
+};
 // Phase 3 analytics: sessionId → { activeStudents, raisedHands, messages, pollResponses, boardDraws }
 const liveCache = new Map();
 // Board version tracking for undo race condition prevention
 // Structure: roomId → { version: number, lastUndoAt: timestamp }
 const roomBoardVersions = new Map();
+
+// 🔥 NEW: Code collaboration state
+const roomCodeStates = new Map();
+/*
+roomId → {
+  code: "",
+  language: "cpp",
+  activeEditor: null,
+  lastOutput: null,
+}
+*/
 
 // Direct roomId → sessionId mapping (O(1) lookup, no cache scanning)
 const roomSessionMap = new Map();
@@ -176,12 +175,30 @@ const sessionMetricsIntervals = new Map();
 const endingSessions = new Set();
 // DB Write Throttling: Keeps track of (sid_uid_type) to cap updates to 0.5Hz
 const interactionThrottle = new Map();
+// Socket flood control: tracks last event time per socketId (50 events/sec cap)
+const socketEventRate = new Map();
+// Code snapshot throttle: last DB-write timestamp per roomId (max 1 write per 2s)
+const lastSnapshotTime = new Map();
+
+/**
+ * isSocketFlooding — silently drops events if a socket is emitting > 50 events/sec.
+ * This guards against low-cost DoS from clients sending rapid garbage events.
+ */
+const isSocketFlooding = (socket) => {
+  const now = Date.now();
+  const last = socketEventRate.get(socket.id) || 0;
+  if (now - last < 20) return true; // 50 events/sec hard cap
+  socketEventRate.set(socket.id, now);
+  return false;
+};
 
 // ─── Periodic Memory Cleansing ───────────────────────────────────────────────
 // Prevents memory leaks in long-running processes by purging throttle maps.
 setInterval(() => {
   interactionThrottle.clear();
   lastEventTime.clear();
+  socketEventRate.clear();
+  // Note: lastSnapshotTime is NOT cleared here — it must persist per session lifespan
 }, 60000);
 
 const normalizeRole = (accountType) =>
@@ -228,7 +245,14 @@ const persistPollResults = async (roomId, sessionId) => {
 const endSession = async (roomId, courseId = null, reason = "manual") => {
   if (!roomId) return;
 
-  // 1. Idempotency Lock (In-Memory)
+  // 1. Cancel any pending grace timers IMMEDIATELY
+  if (instructorDisconnectTimers.has(roomId)) {
+    console.log(`⏱️  Cancelled grace timer for room ${roomId} (reason: ${reason})`);
+    clearTimeout(instructorDisconnectTimers.get(roomId));
+    instructorDisconnectTimers.delete(roomId);
+  }
+
+  // 2. Idempotency Lock (In-Memory)
   const sid = roomSessionMap.get(roomId);
   if (sid && endingSessions.has(sid)) return;
   if (sid) endingSessions.add(sid);
@@ -265,6 +289,14 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
         { status: "ended", endedAt: new Date(), endedReason: reason }
       );
       
+      // NEW: Also attempt to clear course state if roomId is known (idempotent)
+      if (courseId) {
+        await Course.findByIdAndUpdate(courseId, { isLive: false, liveRoomId: null });
+      } else {
+        // Search by liveRoomId if courseId not passed
+        await Course.updateMany({ liveRoomId: roomId }, { isLive: false, liveRoomId: null });
+      }
+      
       return;
     };
 
@@ -295,6 +327,7 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
       
       // 4.1 Force-Finalize Attendance for all active participants (Bug 11 Fix)
       // Ensures stars like Alpha get credited for their time until the very end
+      const nowMs = new Date();
       if (cache?.activeSockets) {
         const activeUserIds = Array.from(cache.activeSockets.keys());
         if (activeUserIds.length > 0) {
@@ -304,14 +337,14 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
             });
 
             const finalizeOps = activeDocs.map(att => {
-                const lastSeen = att.lastSeenAt ? new Date(att.lastSeenAt).getTime() : att.joinedAt ? new Date(att.joinedAt).getTime() : now.getTime();
-                const delta = Math.floor((now.getTime() - lastSeen) / 1000);
+                const lastSeen = att.lastSeenAt ? new Date(att.lastSeenAt).getTime() : att.joinedAt ? new Date(att.joinedAt).getTime() : nowMs.getTime();
+                const delta = Math.floor((nowMs.getTime() - lastSeen) / 1000);
                 return {
                     updateOne: {
                         filter: { _id: att._id },
                         update: { 
                             $inc: { activeSeconds: Math.max(0, delta) },
-                            $set: { lastSeenAt: now, status: "left", leftAt: now }
+                            $set: { lastSeenAt: nowMs, status: "left", leftAt: nowMs }
                         }
                     }
                 };
@@ -345,12 +378,21 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
         }
 
         // [Production Hardening] Derive engagement score based on confirmed breakdown
+        const bufferMetrics = cache?.engagementBuffer?.get(att.userId?.toString()) || { chat:0, polls:0, board:0, hands:0 };
         const b = att.engagementBreakdown || {};
+        
+        const finalBreakdown = {
+          chat:  (b.chat || 0) + (bufferMetrics.chat || 0),
+          polls: (b.polls || 0) + (bufferMetrics.polls || 0),
+          board: (b.board || 0) + (bufferMetrics.board || 0),
+          hands: (b.hands || 0) + (bufferMetrics.hands || 0),
+        };
+
         const calculatedScore = 
-          (b.chat || 0) * 1 +
-          (b.polls || 0) * 2 +
-          (b.board || 0) * 2 +
-          (b.hands || 0) * 2;
+          (finalBreakdown.chat) * 1 +
+          (finalBreakdown.polls) * 2 +
+          (finalBreakdown.board) * 2 +
+          (finalBreakdown.hands) * 2;
 
         // Late join detection (> 5 min)
         const joinTime = att.joinedAt ? new Date(att.joinedAt).getTime() : 0;
@@ -365,7 +407,8 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
             filter: { _id: att._id },
             update: { $set: { 
               attendanceStatus: status,
-              engagementScore: calculatedScore 
+              engagementScore: calculatedScore,
+              engagementBreakdown: finalBreakdown
             } }
           }
         };
@@ -438,15 +481,15 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
       await persistPollResults(roomId, sid);
     }
 
-    // 5. Update Course Status (Centralized source of truth)
-    if (isFirstTerminator && courseId) {
+    // 5. Update Course Status (Always do this if we have courseId, even if not first terminator)
+    if (courseId) {
        await Course.findByIdAndUpdate(courseId, {
          isLive: false,
          liveRoomId: null,
          lastHeartbeatAt: null,
          liveStartedAt: null
        });
-       console.log(`🏁 Course ${courseId} marked as NOT LIVE in DB.`);
+       console.log(`🏁 Course ${courseId} marked as NOT LIVE in DB. (Terminator: ${isFirstTerminator})`);
     }
 
     // 6. Board Persistence (Only for first terminator)
@@ -483,6 +526,9 @@ const endSession = async (roomId, courseId = null, reason = "manual") => {
     roomPinnedMessages.delete(roomId);
     roomClosedPollResults.delete(roomId);
     roomBoardVersions.delete(roomId);
+    roomRaisedHands.delete(roomId);
+    roomKickedUsers.delete(roomId);
+    roomCodeStates.delete(roomId);
     
     if (pollTimers.has(roomId)) {
       clearTimeout(pollTimers.get(roomId));
@@ -676,52 +722,7 @@ app.set("endSession", endSession);
 io.on("connection", (socket) => {
   console.log("🟢 Socket connected:", socket.id);
 
-  // #region agent log
-  socket.on("disconnecting", (reason) => {
-    try {
-      const d = socket.data || {};
-      agentNdjsonLog({
-        runId: "pre-fix",
-        hypothesisId: "H1",
-        location: "backend/server.js:disconnecting",
-        message: "socket disconnecting",
-        data: {
-          socketId: socket.id,
-          reason,
-          roomId: d.roomId,
-          role: d.role,
-          userId: d.userId,
-          sessionId: d.sessionId ? String(d.sessionId) : null,
-          hasGraceTimer: d.roomId ? instructorDisconnectTimers.has(d.roomId) : null,
-        },
-        timestamp: Date.now(),
-      });
-      (typeof fetch === "function"
-        ? fetch("http://127.0.0.1:7297/ingest/2e9fa13e-90a3-428f-9323-6c1de32a1d69", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2ecb98" },
-            body: JSON.stringify({
-              sessionId: "2ecb98",
-              runId: "pre-fix",
-              hypothesisId: "H1",
-              location: "backend/server.js:disconnecting",
-              message: "socket disconnecting",
-              data: {
-                socketId: socket.id,
-                reason,
-                roomId: d.roomId,
-                role: d.role,
-                userId: d.userId,
-                sessionId: d.sessionId ? String(d.sessionId) : null,
-                hasGraceTimer: d.roomId ? instructorDisconnectTimers.has(d.roomId) : null,
-              },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {})
-        : null);
-    } catch (_) {}
-  });
-  // #endregion agent log
+  
 
   socket.on("join-room", async ({ roomId, token: authToken, name }) => {
     const joinStartedAt = Date.now();
@@ -799,6 +800,14 @@ io.on("connection", (socket) => {
         });
         return;
       }
+
+      if (roomKickedUsers.has(roomId) && roomKickedUsers.get(roomId).has(userId)) {
+        joinLog("join-room:kicked-user-rejected");
+        socket.emit("room-join-error", {
+          message: "You have been removed from this session by the instructor.",
+        });
+        return;
+      }
     } catch (err) {
       console.error(`🛑 join-room rejected: ${err.message} (Socket: ${socket.id}, Token length: ${authToken?.length})`);
       socket.emit("room-join-error", {
@@ -839,31 +848,14 @@ io.on("connection", (socket) => {
             clearTimeout(instructorDisconnectTimers.get(roomId));
             instructorDisconnectTimers.delete(roomId);
             console.log(`👨‍🏫 Instructor reconnected, grace timer cancelled for ${roomId}`);
-            // #region agent log
-            agentNdjsonLog({
-              runId: "pre-fix",
-              hypothesisId: "H2",
-              location: "backend/server.js:grace-cancel",
-              message: "instructor grace timer cancelled on join-room",
-              data: { roomId, socketId: socket.id, userId, sessionId: sid },
-              timestamp: Date.now(),
-            });
-            (typeof fetch === "function"
-              ? fetch("http://127.0.0.1:7297/ingest/2e9fa13e-90a3-428f-9323-6c1de32a1d69", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2ecb98" },
-                  body: JSON.stringify({
-                    sessionId: "2ecb98",
-                    runId: "pre-fix",
-                    hypothesisId: "H2",
-                    location: "backend/server.js:grace-cancel",
-                    message: "instructor grace timer cancelled on join-room",
-                    data: { roomId, socketId: socket.id, userId, sessionId: sid },
-                    timestamp: Date.now(),
-                  }),
-                }).catch(() => {})
-              : null);
-            // #endregion agent log
+          }
+
+          // Cancel empty room cleanup if someone joins
+          if (emptyRoomTimers.has(roomId)) {
+            clearTimeout(emptyRoomTimers.get(roomId));
+            emptyRoomTimers.delete(roomId);
+            console.log(`♻️  Cancelled empty room cleanup for ${roomId} (User joined)`);
+            
           }
 
           // Set socket.data ATOMICALLY before any handshake
@@ -1040,6 +1032,45 @@ io.on("connection", (socket) => {
         socket.emit("message-pinned", roomPinnedMessages.get(roomId));
       }
 
+      // Sync raised hands (to new joiners)
+      if (roomRaisedHands.has(roomId)) {
+        const hands = Array.from(roomRaisedHands.get(roomId).values());
+        hands.forEach(h => socket.emit("hand-raised", h));
+      }
+
+      // 🔥 CODE STATE SYNC (with restart recovery)
+      if (!roomCodeStates.has(roomId)) {
+        // Try to recover from LiveSession if available
+        let recovered = null;
+        try {
+           const liveSession = await LiveSession.findOne({ liveRoomId: roomId, status: "active" });
+           if (liveSession?.lastCodeSnapshot?.code) {
+              recovered = {
+                code:         liveSession.lastCodeSnapshot.code,
+                language:     liveSession.lastCodeSnapshot.language || "cpp",
+                activeEditor: liveSession.lastCodeSnapshot.activeEditor || null,
+                lastOutput:   null,
+                 lastExecutionId: 0
+              };
+              console.log(`♻️  Recovered code state for room ${roomId} from DB`);
+           }
+        } catch (e) { console.error("Recovery failed", e); }
+
+        const initialLang = recovered?.language || "cpp";
+        roomCodeStates.set(roomId, recovered || {
+          code: DEFAULT_BOILERPLATES[initialLang] || "// Start coding here...\n",
+          language: initialLang,
+          activeEditor: null,
+          lastOutput: null,
+          lastExecutionId: 0,
+        });
+      }
+      socket.emit("CODE_STATE", roomCodeStates.get(roomId));
+
+      socket.on("request-code-state", () => {
+        socket.emit("CODE_STATE", roomCodeStates.get(roomId));
+      });
+
       socket.on("request-board-state", () => {
         socket.emit("BOARD_STATE", roomBoardStates.get(roomId) || []);
       });
@@ -1082,9 +1113,15 @@ io.on("connection", (socket) => {
   socket.on("heartbeat", async () => {
     const { sessionId, userId, role } = socket.data || {};
     if (!sessionId || !userId || role === "instructor") return;
+
+    const heartKey = `heart_${userId}`;
+    const now = Date.now();
+    // Strict 10-second rate limit to prevent DB DoS
+    if (now - (lastEventTime.get(heartKey) || 0) < 10000) return;
+    lastEventTime.set(heartKey, now);
+
     try {
       // Use accurate time-based delta instead of a fixed +30 estimate
-      const now = Date.now();
       const attendance = await LiveAttendance.findOne({ sessionId, userId });
       if (attendance) {
         const lastSeen = attendance.lastSeenAt ? new Date(attendance.lastSeenAt).getTime() : now;
@@ -1110,7 +1147,23 @@ io.on("connection", (socket) => {
       const interval = setInterval(() => {
         const cache = liveCache.get(sid);
         if (cache) {
-          io.to(roomId).emit("live-metrics", cache);
+          const timelineObj = {};
+          if (cache.timeline instanceof Map) {
+            cache.timeline.forEach((v, k) => {
+              const { activeUsersSet, ...rest } = v;
+              timelineObj[k] = { ...rest, active: activeUsersSet?.size || 0 };
+            });
+          }
+          const engagementObj = {};
+          if (cache.engagementBuffer instanceof Map) {
+            cache.engagementBuffer.forEach((v, k) => { engagementObj[k] = v; });
+          }
+          io.to(roomId).emit("live-metrics", {
+            ...cache,
+            timeline: timelineObj,
+            engagementBuffer: engagementObj,
+            activeSockets: undefined,
+          });
         } else {
           // If no cache, this session probably ended; kill the interval
           clearInterval(sessionMetricsIntervals.get(sid));
@@ -1129,10 +1182,18 @@ socket.on("raise-hand", ({ roomId, user }) => {
     // Room-lock: reject events if session has already ended
     if (!roomParticipants.has(roomId)) return;
 
-    io.to(roomId).emit("hand-raised", {
+    const payload = {
       user,
       timestamp: Date.now(),
-    });
+    };
+
+    // PERSISTENCE: Store in room state for sync on refresh/late-join
+    if (!roomRaisedHands.has(roomId)) {
+      roomRaisedHands.set(roomId, new Map());
+    }
+    roomRaisedHands.get(roomId).set(user.id, payload);
+
+    io.to(roomId).emit("hand-raised", payload);
 
     logEvent({
       sessionId: socket.data.sessionId,
@@ -1150,12 +1211,22 @@ socket.on("raise-hand", ({ roomId, user }) => {
     if (!roomId || !userId) return;
     if (!roomParticipants.has(roomId)) return;
 
+    // PERSISTENCE: Remove from room state
+    if (roomRaisedHands.has(roomId)) {
+      roomRaisedHands.get(roomId).delete(userId);
+    }
+
     io.to(roomId).emit("hand-lowered", { userId });
   });
 
   socket.on("RESOLVE_HAND", ({ roomId, userId, name }) => {
      if (!roomId || !userId || socket.data.role !== "instructor") return;
      
+     // PERSISTENCE: Remove from room state
+     if (roomRaisedHands.has(roomId)) {
+       roomRaisedHands.get(roomId).delete(userId);
+     }
+
      // 1. Grant Mic permission
      const ctrl = initSessionControls(roomId);
      ctrl.mutedUsers.delete(userId);
@@ -1196,7 +1267,7 @@ socket.on("raise-hand", ({ roomId, user }) => {
       type: msgType,
       userId: socket.data.userId,
       timestamp: now,
-      msgId: uuidv4(), // Unique ID for delivery tracking
+      msgId: message.msgId || uuidv4(), // Preserve client msgId for dedup, fallback to server UUID
     };
 
     io.to(roomId).emit("receive-message", outgoing);
@@ -1224,6 +1295,44 @@ socket.on("raise-hand", ({ roomId, user }) => {
 
     roomPinnedMessages.set(roomId, message);
     io.to(roomId).emit("message-pinned", message);
+  });
+
+  socket.on("unpin-message", ({ roomId }) => {
+    if (!roomId || socket.data.role !== "instructor") return;
+    roomPinnedMessages.delete(roomId);
+    io.to(roomId).emit("message-unpinned");
+  });
+
+  socket.on("delete-message", ({ roomId, msgId }) => {
+    if (!roomId || !msgId || socket.data.role !== "instructor") return;
+    io.to(roomId).emit("message-deleted", { msgId });
+  });
+
+  socket.on("kick-user", ({ roomId, userId, reason }) => {
+    if (!roomId || !userId || socket.data.role !== "instructor") return;
+    
+    if (!roomKickedUsers.has(roomId)) {
+      roomKickedUsers.set(roomId, new Set());
+    }
+    roomKickedUsers.get(roomId).add(userId);
+
+    // Find the socket(s) for this user in this room
+    const cache = liveCache.get(String(socket.data.sessionId));
+    const userSockets = cache?.activeSockets?.get(userId);
+    
+    if (userSockets) {
+      userSockets.forEach(sid => {
+        const targetSocket = io.sockets.sockets.get(sid);
+        if (targetSocket) {
+          targetSocket.emit("KICKED", { reason: reason || "Moderator removed you from the room." });
+          targetSocket.leave(roomId);
+          targetSocket.disconnect(true);
+        }
+      });
+    }
+    
+    io.to(roomId).emit("USER_KICKED", { userId, name: "Student" }); // Notify others
+    emitParticipants(roomId);
   });
 
   // ─── POLLS ────────────────────────────────────────────────────────────────
@@ -1261,6 +1370,10 @@ socket.on("raise-hand", ({ roomId, user }) => {
       // Re-fetch state to see if poll is still active
       const currentPollData = roomPolls.get(roomId);
       if (currentPollData?.activePoll?.id === newPoll.id) {
+        
+        // PERSIST TO DB before clearing
+        persistPollResults(roomId, socket.data.sessionId).catch(e => console.error("Poll auto-close persist failed:", e));
+
         // Trigger manual close logic
         const { options, votes } = currentPollData.activePoll;
         const finalTally = {};
@@ -1292,15 +1405,16 @@ socket.on("raise-hand", ({ roomId, user }) => {
     const userId = socket.data.userId?.toString();
     const { courseId, sessionId } = socket.data;
 
+    const voteKey = `vote_${userId}`;
+    if (now - (lastEventTime.get(voteKey) || 0) < 500) return;
+    lastEventTime.set(voteKey, now);
+
     // Strict Security: Enrollment check
     const course = await Course.findById(courseId);
     if (!course || !course.studentsEnrolled.some(s => s.toString() === userId)) {
        return; // Unauthorized
     }
 
-    const voteKey = `vote_${userId}`;
-    if (now - (lastEventTime.get(voteKey) || 0) < 500) return;
-    lastEventTime.set(voteKey, now);
 
     const pollData = roomPolls.get(roomId);
     const activePoll = pollData?.activePoll;
@@ -1720,6 +1834,146 @@ const broadcastBoardStroke = async (socket, { roomId, stroke }) => {
     });
   });
 
+  // ─── COLLABORATIVE CODE EDITOR ────────────────────────────────────────────────
+  socket.on("code-change", ({ roomId, code }) => {
+    if (isSocketFlooding(socket)) return;                              // Flood guard
+    if (!roomId || typeof code !== "string" || code.length > 50000) return;
+    if (socket.data.roomId !== roomId) return; // Point 5: Room Isolation Validation
+    if (!roomParticipants.has(roomId)) return;
+    const session = roomCodeStates.get(roomId);
+    if (!session) return;
+    const userId = socket.data.userId;
+    const role   = socket.data.role;
+    if (role !== "instructor" && session.activeEditor !== userId) return;
+    session.code = code;
+    socket.to(roomId).emit("code-update", { code, userId });
+
+    // Throttled background persistence: max 1 DB write per 2 seconds per room
+    const sessionId = socket.data.sessionId;
+    if (sessionId) {
+      const now = Date.now();
+      const lastSave = lastSnapshotTime.get(roomId) || 0;
+      if (now - lastSave > 2000) {
+        lastSnapshotTime.set(roomId, now);
+        LiveSession.findByIdAndUpdate(sessionId, {
+          "lastCodeSnapshot.code": code
+        }).catch(e => console.error("Snapshot fail", e));
+      }
+    }
+  });
+  socket.on("code-language-change", ({ roomId, language }) => {
+    if (!roomId || !language) return;
+    if (socket.data.roomId !== roomId) return; // Point 5: Room Isolation Validation
+    const ALLOWED = ["cpp", "c", "python", "java", "javascript"];
+    if (!ALLOWED.includes(language)) return;
+    if (!roomParticipants.has(roomId)) return;
+    const session = roomCodeStates.get(roomId);
+    if (!session) return;
+    const userId = socket.data.userId;
+    const role   = socket.data.role;
+    if (role !== "instructor" && session.activeEditor !== userId) return;
+    session.language = language;
+    io.to(roomId).emit("code-language-updated", { language });
+
+    // Background persistence (Point 2)
+    const sessionId = socket.data.sessionId;
+    if (sessionId) {
+      LiveSession.findByIdAndUpdate(sessionId, { 
+        "lastCodeSnapshot.language": language 
+      }).catch(e => console.error("Lang snapshot fail", e));
+    }
+  });
+
+  socket.on("code-editor-control", ({ roomId, targetUserId }) => {
+    if (!roomId || !targetUserId || socket.data.role !== "instructor") return;
+    if (socket.data.roomId !== roomId) return; // Point 5: Room Isolation Validation
+    if (!roomParticipants.has(roomId)) return;
+    const session = roomCodeStates.get(roomId);
+    if (!session) return;
+    session.activeEditor = targetUserId;
+    io.to(roomId).emit("code-editor-updated", { activeEditor: targetUserId });
+
+    // Background persistence (Point 2)
+    const sessionId = socket.data.sessionId;
+    if (sessionId) {
+      LiveSession.findByIdAndUpdate(sessionId, { 
+        "lastCodeSnapshot.activeEditor": targetUserId 
+      }).catch(e => console.error("Editor snapshot fail", e));
+    }
+  });
+
+  socket.on("code-editor-revoke", ({ roomId }) => {
+    if (!roomId || socket.data.role !== "instructor") return;
+    if (socket.data.roomId !== roomId) return; // Point 5: Room Isolation Validation
+    if (!roomParticipants.has(roomId)) return;
+    const session = roomCodeStates.get(roomId);
+    if (!session) return;
+    session.activeEditor = null;
+    io.to(roomId).emit("code-editor-updated", { activeEditor: null });
+
+    // Background persistence (Point 2)
+    const sessionId = socket.data.sessionId;
+    if (sessionId) {
+      LiveSession.findByIdAndUpdate(sessionId, { 
+        "lastCodeSnapshot.activeEditor": null 
+      }).catch(e => console.error("Revoke snapshot fail", e));
+    }
+  });
+
+  socket.on("run-code", async ({ roomId, input = "" }) => {
+    if (!roomId || !roomParticipants.has(roomId)) return;
+    if (socket.data.roomId !== roomId) return; // Point 5: Room Isolation Validation
+    const session = roomCodeStates.get(roomId);
+    if (!session) return;
+    const userId = socket.data.userId;
+    const role   = socket.data.role;
+    if (role !== "instructor" && session.activeEditor !== userId) return;
+
+    console.log(`🚀 [CODE_EXEC] ${userId} triggering run in ${roomId} (Lang: ${session.language})`);
+
+    const runKey = `run_${userId}`;
+    const now = Date.now();
+    if (now - (lastEventTime.get(runKey) || 0) < 2000) {
+       socket.emit("code-result", { error: "⏳ Please wait a moment before running code again." });
+       return;
+    }
+    lastEventTime.set(runKey, now);
+    const executionId = now;
+    session.lastExecutionId = executionId;
+
+    try {
+      const { executionQueue, QueueOverflowError, PRIORITY } = require("./utils/executionQueue");
+      const { runSingle } = require("./utils/executionEngine");
+
+      const result = await executionQueue.add(
+        () => runSingle({
+          code:      session.code,
+          language:  session.language,
+          input:     typeof input === "string" ? input.slice(0, 1024) : "",
+          limits:    { timeLimit: 2000, memoryLimit: 256 },
+          boilerplate: {},
+        }),
+        { priority: PRIORITY.LIVE_CLASS, label: "live-class-run" }
+      );
+
+      if (session.lastExecutionId !== executionId) {
+        console.log(`⚠️  Discarding stale code result for room ${roomId}`);
+        return;
+      }
+
+      session.lastOutput = result;
+      io.to(roomId).emit("code-result", result);
+    } catch (err) {
+      const { QueueOverflowError } = require("./utils/executionQueue");
+      const result = { 
+        error: err instanceof QueueOverflowError
+          ? "⚠️ Server busy. Too many code runs. Try again shortly."
+          : "Execution failed."
+      };
+      io.to(roomId).emit("code-result", result);
+    }
+  });
+
   socket.on("disconnect", async () => {
     // Bug 1 Fix: Support fallback if socket.data was lost or incomplete
     const { roomId, userId, role, courseId, sessionId } = socket.data || {};
@@ -1731,7 +1985,8 @@ const broadcastBoardStroke = async (socket, { roomId, stroke }) => {
       if (role === "instructor") {
         // Bug 6 Fix: Authorization check (verify instructor ownership)
         const course = await Course.findOne({ liveRoomId: roomId }).select("instructor");
-        if (course && course.instructor.toString() !== userId) {
+        if (!course) return; // Class already ended manually or room invalid
+        if (course.instructor.toString() !== userId) {
           console.warn(`🛑 Unauthorized instructor disconnect logic for ${roomId}`);
           return;
         }
@@ -1745,31 +2000,7 @@ const broadcastBoardStroke = async (socket, { roomId, stroke }) => {
         // Step 1: Start 10-second grace timer (Bug 9)
         const timeout = setTimeout(async () => {
           console.warn(`⏰ Grace timer expired for ${roomId}. Ending session.`);
-          // #region agent log
-          agentNdjsonLog({
-            runId: "pre-fix",
-            hypothesisId: "H3",
-            location: "backend/server.js:grace-expired",
-            message: "instructor grace timer expired; ending session",
-            data: { roomId, userId, courseId: (course?._id || courseId)?.toString?.() || null, sid },
-            timestamp: Date.now(),
-          });
-          (typeof fetch === "function"
-            ? fetch("http://127.0.0.1:7297/ingest/2e9fa13e-90a3-428f-9323-6c1de32a1d69", {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2ecb98" },
-                body: JSON.stringify({
-                  sessionId: "2ecb98",
-                  runId: "pre-fix",
-                  hypothesisId: "H3",
-                  location: "backend/server.js:grace-expired",
-                  message: "instructor grace timer expired; ending session",
-                  data: { roomId, userId, courseId: (course?._id || courseId)?.toString?.() || null, sid },
-                  timestamp: Date.now(),
-                }),
-              }).catch(() => {})
-            : null);
-          // #endregion agent log
+          
           // Sync DB state
           await Course.findOneAndUpdate(
             { liveRoomId: roomId },
@@ -1779,31 +2010,7 @@ const broadcastBoardStroke = async (socket, { roomId, stroke }) => {
         }, INSTRUCTOR_GRACE_MS);
 
         instructorDisconnectTimers.set(roomId, timeout);
-        // #region agent log
-        agentNdjsonLog({
-          runId: "pre-fix",
-          hypothesisId: "H3",
-          location: "backend/server.js:grace-start",
-          message: "instructor grace timer started",
-          data: { roomId, socketId: socket.id, userId, sid, courseId: (course?._id || courseId)?.toString?.() || null },
-          timestamp: Date.now(),
-        });
-        (typeof fetch === "function"
-          ? fetch("http://127.0.0.1:7297/ingest/2e9fa13e-90a3-428f-9323-6c1de32a1d69", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2ecb98" },
-              body: JSON.stringify({
-                sessionId: "2ecb98",
-                runId: "pre-fix",
-                hypothesisId: "H3",
-                location: "backend/server.js:grace-start",
-                message: "instructor grace timer started",
-                data: { roomId, socketId: socket.id, userId, sid, courseId: (course?._id || courseId)?.toString?.() || null },
-                timestamp: Date.now(),
-              }),
-            }).catch(() => {})
-          : null);
-        // #endregion agent log
+        
       } else {
         // Bug 5 Fix: Accurate activeStudents tracking (Tab-Lock aware)
         if (sid) {
@@ -1837,12 +2044,26 @@ const broadcastBoardStroke = async (socket, { roomId, stroke }) => {
           }
 
           if (participants.size === 0) {
-            console.log(`Empty room ${roomId}. Auto-cleaning up.`);
-            endSession(roomId, courseId, "empty");
+            console.log(`Empty room ${roomId}. Starting ${EMPTY_ROOM_GRACE_MS/1000}s cleanup timer.`);
+            const timer = setTimeout(() => {
+              if (roomParticipants.get(roomId)?.size === 0) {
+                 console.log(`Grace period expired for empty room ${roomId}. Cleaning up.`);
+                 endSession(roomId, courseId, "empty");
+              }
+              emptyRoomTimers.delete(roomId);
+            }, EMPTY_ROOM_GRACE_MS);
+            emptyRoomTimers.set(roomId, timer);
           } else {
             emitParticipants(roomId);
           }
         }
+      }
+
+      // Ghost editor cleanup
+      const codeSession = roomCodeStates.get(roomId);
+      if (codeSession?.activeEditor === userId) {
+        codeSession.activeEditor = null;
+        io.to(roomId).emit("code-editor-updated", { activeEditor: null });
       }
     }
 
@@ -1868,6 +2089,16 @@ const testRoutes = require("./routes/testRoute.js");
 // connections
 connectDB();
 cloudinaryConnect();
+
+// Point 9: Clean Exit on Crash Recovery
+LiveSession.updateMany(
+  { status: "active" },
+  { status: "ended", endedReason: "crash", endedAt: new Date() }
+).then(res => {
+  if (res.modifiedCount > 0) {
+    console.log(`🧹 Crash Recovery: Closed ${res.modifiedCount} abandoned sessions.`);
+  }
+}).catch(err => console.error("Crash Recovery failed:", err));
 
 // ────────────────────────────────────────────────────────────────────────────
 // LIVE CLASS RECONCILIATION ENGINE

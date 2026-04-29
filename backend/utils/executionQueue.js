@@ -8,6 +8,7 @@ const PRIORITY = {
   SUBMIT: 2,
   EXAM_RUN: 3,
   RUN: 4,
+  LIVE_CLASS: 5,
 };
 
 const MAX_WAIT_TIME = 10000; // 10 seconds queue limit

@@ -258,8 +258,18 @@ exports.endLiveClass = async (req, res) => {
 
     // Trigger socket cleanup and Board DB Dump (Handles LiveSession status, Course status, and Broadcast)
     const endSession = req.app.get("endSession");
+    
     if (endSession && activeRoomId) {
       await endSession(activeRoomId, activeCourseId, "manual");
+    } else {
+      console.error("❌ endSession NOT FOUND in req.app or activeRoomId missing");
+      // Fallback: manually mark course as not live if endSession fails
+      await Course.findByIdAndUpdate(courseId, { isLive: false, liveRoomId: null });
+      // Also end the LiveSession so it doesn't stay "active" forever
+      await LiveSession.findOneAndUpdate(
+        { liveRoomId: activeRoomId, status: "active" },
+        { status: "ended", endedAt: new Date(), endedReason: "manual_fallback" }
+      );
     }
 
     console.log(`✅ Live class ended for: ${course.courseName}`);
@@ -317,6 +327,16 @@ exports.validateLiveClass = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: "You are not authorized to join this live class.",
+      });
+    }
+
+    // ── Block Kicked Users ──────────────────────────────────────────────────
+    const { roomKickedUsers } = require("../server");
+    if (roomKickedUsers && roomKickedUsers.has(roomId) && roomKickedUsers.get(roomId).has(userId.toString())) {
+      console.log(`🚫 Kicked user ${userId} blocked at HTTP validate for room ${roomId}`);
+      return res.status(403).json({
+        success: false,
+        message: "You have been removed from this session by the instructor.",
       });
     }
 
